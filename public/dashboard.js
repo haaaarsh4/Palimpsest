@@ -39,7 +39,60 @@
 // `state`, `el`, `formatDate`, `escapeHtml`, `positionHandles`, and
 // `loadDiff` from that file rather than duplicating them.
 
-const RESOLUTION_MAX = { coarse: 14, balanced: 28, fine: 55 };
+// How many snapshots the analysis samples across the record. Balanced is the
+// only setting now that the resolution switch is gone: it lands roughly one
+// bar per year of a long history, which is enough to see the shape of a site
+// without asking the Archive for sixty diffs.
+const SAMPLE_POINTS = 28;
+
+// Bars are filled with the CSS custom properties themselves — flat, one ink
+// per series, no gradients. Colour in this dashboard means added, removed or
+// changed, and every other mark is neutral.
+const SERIES_STACK = ['removed', 'changed', 'added']; // stacked bottom-up
+
+const NUM = new Intl.NumberFormat();
+const fmt = (n) => NUM.format(n);
+
+// A month and a year, for the places a full date would be clipped to an
+// ellipsis: "Oct 1999 → Sep 2026" says everything "Oct 8, 1999 → Sep 5, 20…"
+// was trying to say and fits in the same card.
+function monthYear(iso) {
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+}
+
+// An axis people can read: whole ticks, and a top of the scale that lands on
+// the last one — 0 / 100 / 200 / 300 / 400, not 0 / 78 / 155 / 233 with a
+// 310 the axis never claims to reach. If the tallest bar runs past the highest
+// number printed on the axis, the axis is not telling you the scale.
+function niceScale(max, targetTicks) {
+  if (!(max > 0)) return { step: 1, top: 1 };
+  const raw = max / targetTicks;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  // Rounded to a whole number of changes: this axis counts elements, so a
+  // half-tick could only ever be labelled "1" twice.
+  const step = Math.max(1, Math.round((norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag));
+  return { step, top: Math.max(step, Math.ceil(max / step) * step) };
+}
+
+// A rectangle with only its top corners rounded — how a stack of bars should
+// end. Emitted without a fill so the caller can point it at a gradient.
+function topRoundedRect(x, y, w, h, r) {
+  const rr = Math.max(0, Math.min(r, w / 2, h));
+  if (rr < 0.5) return `<rect x="${x}" y="${y}" width="${w}" height="${h}" />`;
+  return `<path d="M${x} ${y + h} L${x} ${y + rr} Q${x} ${y} ${x + rr} ${y}` +
+    ` L${x + w - rr} ${y} Q${x + w} ${y} ${x + w} ${y + rr} L${x + w} ${y + h} Z" />`;
+}
+
+// Every chart is drawn in the width it is actually given, so a viewBox unit is
+// a pixel and 11px axis type renders as 11px instead of being scaled up from a
+// 1000-unit drawing. Below COMPACT_W the chart switches to compressed margins
+// and a shorter plot rather than being shrunk, which would shrink its type
+// with it. The floor is only a guard against a zero measurement.
+const COMPACT_W = 620;
+function chartWidth(node) {
+  return Math.max(300, Math.round(node.clientWidth || 300));
+}
 
 const TAG_LABELS = {
   a: 'Links', img: 'Images', p: 'Paragraphs', li: 'List items',
@@ -54,9 +107,8 @@ function tagLabel(tag) { return TAG_LABELS[tag] || (tag ? tag.toUpperCase() : 'O
 const DASH = {
   gen: 0,
   forUrl: null,
-  resolution: 'balanced',
-  bucket: 'snapshot',           // 'snapshot' | 'month'
-  series: { added: true, removed: true, changed: true },
+  sig: null,                    // the record the intervals below belong to
+  running: false,               // true while a queue is in flight for DASH.sig
   intervals: [],                // sparse array, filled positionally as fetches resolve
   completed: 0,
   totalPairs: 0,
@@ -64,6 +116,59 @@ const DASH = {
   rangeLo: null,
   rangeHi: null,
 };
+
+// Reading a long history costs one /api/diff per sampled pair, and the answer
+// for a given record never changes. So it is kept. Reopening the dashboard, or
+// coming back to a site you already looked at, redraws from here instead of
+// asking the Archive for the same thirty diffs over again.
+//
+// Keyed on the record itself — url, snapshot count and the two end timestamps —
+// so a re-trace that returns a different list is analyzed afresh, and nothing
+// else ever is.
+const ANALYSIS_CACHE_MAX = 6;
+const analysisCache = new Map();
+
+function analysisSignature() {
+  const s = state.snapshots;
+  return `${state.url}|${s.length}|${s[0].timestamp}|${s[s.length - 1].timestamp}`;
+}
+
+function cacheAnalysis(sig) {
+  analysisCache.delete(sig);             // re-insert: Map iteration is oldest-first
+  analysisCache.set(sig, {
+    intervals: DASH.intervals,
+    totalPairs: DASH.totalPairs,
+    sampled: DASH.sampled,
+  });
+  while (analysisCache.size > ANALYSIS_CACHE_MAX) {
+    analysisCache.delete(analysisCache.keys().next().value);
+  }
+}
+
+function restoreAnalysis(entry) {
+  DASH.intervals = entry.intervals;
+  DASH.totalPairs = entry.totalPairs;
+  DASH.sampled = entry.sampled;
+  DASH.completed = entry.totalPairs;
+}
+
+// The masthead's one line of prose, and the caption over the chart. Both depend
+// only on what was analyzed, so both are re-stated whenever we redraw —
+// whether that reading came off the wire or out of the cache.
+function describeAnalysis() {
+  el('dashSubtitle').textContent = DASH.sampled
+    ? `${state.snapshots.length} snapshots on file \u00b7 analyzing ${DASH.totalPairs + 1} of them across the full span`
+    : `${state.snapshots.length} snapshots on file \u00b7 analyzing every one of them`;
+  el('dashActivityHint').textContent = DASH.sampled
+    ? 'Click a bar to open it \u00b7 hover for skipped snapshots'
+    : 'Click any bar to open that comparison';
+}
+
+// The dashboard presents one fixed reading of the record: consecutive
+// snapshots, sampled evenly across calendar time, all three series drawn.
+// There is no resolution switch, no grouping switch and no series filter —
+// what is on screen is the whole picture, and the only thing you can change is
+// which stretch of it you are looking at.
 
 // ---------------------------------------------------------------- open/close
 el('openDashboardBtn').addEventListener('click', openDashboard);
@@ -79,6 +184,7 @@ function openDashboard() {
   el('dashboardModal').hidden = false;
   el('dashSiteName').textContent = state.url;
   document.body.style.overflow = 'hidden'; // stop the page underneath scrolling with the modal open
+  el('dashBody').scrollTop = 0;
 
   if (DASH.forUrl !== state.url) {
     DASH.forUrl = state.url;
@@ -87,44 +193,55 @@ function openDashboard() {
   }
 
   renderCadence();     // needs only state.snapshots — instant, no fetch required
+
+  const sig = analysisSignature();
+  const cached = analysisCache.get(sig);
+  if (cached) {
+    // This exact record has already been read. Redraw it; fetch nothing — but
+    // first abandon any run still in flight for a different record, or it will
+    // land in this dashboard when it finishes.
+    DASH.gen++;
+    DASH.running = false;
+    DASH.sig = sig;
+    restoreAnalysis(cached);
+    describeAnalysis();
+    renderAll();
+    return;
+  }
+
+  if (DASH.sig === sig && DASH.running) {
+    // A run for this record is already in flight. Reopening must not start a
+    // second one — show where the first has got to and let it finish itself.
+    describeAnalysis();
+    renderKpiSkeleton();
+    renderLoadingSkeletons();
+    updateLoadingProgressText();
+    return;
+  }
+
   startAnalysis();
 }
 
 function closeDashboard() {
   el('dashboardModal').hidden = true;
   document.body.style.overflow = '';
+  hideDashTooltip();
 }
 
-// ---------------------------------------------------------------- resolution (segmented control)
-el('dashResolutionToggle').querySelectorAll('.toggle-btn').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    if (btn.classList.contains('active')) return;
-    el('dashResolutionToggle').querySelectorAll('.toggle-btn').forEach((b) => b.classList.toggle('active', b === btn));
-    DASH.resolution = btn.dataset.value;
-    DASH.rangeLo = null;
-    DASH.rangeHi = null;
-    startAnalysis();
-  });
-});
-
-// ---------------------------------------------------------------- group-by & series controls
-el('dashBucketSnapshot').addEventListener('click', () => setBucket('snapshot'));
-el('dashBucketMonth').addEventListener('click', () => setBucket('month'));
-function setBucket(mode) {
-  DASH.bucket = mode;
-  el('dashBucketSnapshot').classList.toggle('active', mode === 'snapshot');
-  el('dashBucketMonth').classList.toggle('active', mode === 'month');
-  if (DASH.completed >= DASH.totalPairs) renderCharts();
-}
-
-['Added', 'Removed', 'Changed'].forEach((name) => {
-  el('dashSeries' + name).addEventListener('change', () => {
-    DASH.series[name.toLowerCase()] = el('dashSeries' + name).checked;
+// Every chart is measured to its container, so a resize has to redraw or the
+// plot keeps the width it was born with. Debounced: a drag-resize fires this
+// on every frame, and the analysis itself is untouched by a width change.
+let dashResizeTimer = null;
+window.addEventListener('resize', () => {
+  if (el('dashboardModal').hidden) return;
+  clearTimeout(dashResizeTimer);
+  dashResizeTimer = setTimeout(() => {
+    renderCadence();
     if (DASH.completed >= DASH.totalPairs) renderCharts();
-  });
+  }, 140);
 });
 
-// ---------------------------------------------------------------- focus range (plain selects)
+// ---------------------------------------------------------------- range (plain selects)
 el('dashRangeFrom').addEventListener('change', () => {
   let lo = parseInt(el('dashRangeFrom').value, 10);
   let hi = parseInt(el('dashRangeTo').value, 10);
@@ -149,6 +266,7 @@ el('dashRangeReset').addEventListener('click', () => {
 function setupFocusControls() {
   const all = DASH.intervals.filter(Boolean);
   const n = all.length;
+  // A tail this short fits on screen at once, so there is nothing to narrow.
   const show = n > 6;
   el('dashRangeFilter').hidden = !show;
   if (!show) return;
@@ -192,7 +310,7 @@ function nearestSnapshotIndex(targetT) {
 
 function computePairs() {
   const n = state.snapshots.length;
-  const maxPoints = RESOLUTION_MAX[DASH.resolution];
+  const maxPoints = SAMPLE_POINTS;
 
   let indices;
   if (n - 1 <= maxPoints) {
@@ -267,25 +385,33 @@ async function startAnalysis() {
   DASH.gen++;
   const myGen = DASH.gen;
   const pairs = computePairs();
+  const sig = analysisSignature();
+
+  DASH.sig = sig;
+  DASH.running = true;
   DASH.intervals = new Array(pairs.length);
   DASH.completed = 0;
   DASH.totalPairs = pairs.length;
   DASH.sampled = pairs.length < state.snapshots.length - 1;
 
-  el('dashSubtitle').textContent = DASH.sampled
-    ? `${state.snapshots.length} snapshots on file \u00b7 analyzing ${pairs.length + 1} of them across the full span`
-    : `${state.snapshots.length} snapshots on file \u00b7 analyzing every one of them`;
-  el('dashActivityHint').textContent = DASH.sampled
-    ? 'Click a bar to open it \u00b7 hover for skipped snapshots'
-    : 'Click any bar to open that comparison';
-
+  describeAnalysis();
   renderKpiSkeleton();
   renderLoadingSkeletons();
 
-  if (pairs.length === 0) { renderAll(); return; }
+  if (pairs.length === 0) {
+    DASH.running = false;
+    cacheAnalysis(sig);
+    renderAll();
+    return;
+  }
 
   await runQueue(pairs, 4, myGen);
-  if (DASH.gen !== myGen) return; // superseded by a newer resolution change
+  if (DASH.gen !== myGen) return; // superseded by a newer analysis
+  DASH.running = false;
+
+  // A failed pair is left uncached on purpose: a flaky minute should be
+  // retryable by reopening, not frozen into the dashboard forever.
+  if (!DASH.intervals.some((iv) => iv && iv.error)) cacheAnalysis(sig);
   renderAll();
 }
 
@@ -321,41 +447,20 @@ function renderCharts() {
 }
 
 // ---------------------------------------------------------------- data shaping
+// One interval per analyzed pair, narrowed to whatever range is selected.
 function getVisibleIntervals() {
   const all = DASH.intervals.filter(Boolean);
   const lo = DASH.rangeLo ?? 0;
   const hi = DASH.rangeHi ?? Math.max(0, all.length - 1);
-  const sliced = all.slice(lo, hi + 1);
-
-  if (DASH.bucket === 'snapshot' || sliced.length === 0) return sliced;
-
-  const map = new Map();
-  sliced.forEach((iv) => {
-    const d = new Date(iv.toDate);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    if (!map.has(key)) {
-      map.set(key, {
-        key, label: d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }),
-        fromIdx: iv.fromIdx, toIdx: iv.toIdx, fromDate: iv.fromDate, toDate: iv.toDate,
-        skipped: 0, added: 0, removed: 0, changed: 0, total: 0, tagCounts: {},
-      });
-    }
-    const b = map.get(key);
-    b.toIdx = iv.toIdx;
-    b.toDate = iv.toDate;
-    b.skipped += iv.skipped;
-    b.added += iv.added; b.removed += iv.removed; b.changed += iv.changed; b.total += iv.total;
-    Object.entries(iv.tagCounts).forEach(([t, c]) => { b.tagCounts[t] = (b.tagCounts[t] || 0) + c; });
-  });
-  return Array.from(map.values());
+  return all.slice(lo, hi + 1);
 }
 
-// ---------------------------------------------------------------- KPIs
-// Every KPI follows the same shape: a big value, one short plain-text
-// line underneath, never a sentence, never a second line. Anything
-// longer (a full added/removed/edited breakdown, a skip count) lives in
-// the title attribute as a native hover tooltip instead of visible text
-// that has to be squeezed to fit.
+// ---------------------------------------------------------------- measures
+// Every measure follows the same shape: a small tracked caption, one large
+// figure, and one annotation line under a rule. Nothing may wrap to a second
+// line: anything that would have been too long is either shortened to the part
+// that carries the meaning (month and year, never a clipped date) or moved
+// into the title attribute as a native hover tooltip.
 function humanDuration(fromIso, toIso) {
   const days = Math.round((new Date(toIso) - new Date(fromIso)) / 86400000);
   if (days < 1) return 'under a day';
@@ -368,25 +473,42 @@ function humanDuration(fromIso, toIso) {
 
 function kpiCard(label, value, sub, opts = {}) {
   const accent = opts.accent ? ' accent' : '';
+  const pending = opts.pending ? ' is-pending' : '';
   const clickable = opts.onClick ? ' dash-kpi-clickable' : '';
   const title = opts.title ? ` title="${escapeHtml(opts.title)}"` : '';
   const id = opts.id ? ` id="${opts.id}"` : '';
+  const unit = opts.unit ? `<span class="dash-kpi-unit">${escapeHtml(opts.unit)}</span>` : '';
+  const body = opts.subHtml != null ? opts.subHtml : escapeHtml(sub == null ? '' : sub);
   return `<div class="dash-kpi${clickable}"${id}${title}>
     <span class="dash-kpi-label">${escapeHtml(label)}</span>
-    <span class="dash-kpi-value${accent}">${value}</span>
-    <span class="dash-kpi-sub">${sub}</span>
+    <span class="dash-kpi-value${accent}${pending}">${value}${unit}</span>
+    <span class="dash-kpi-sub">${body}</span>
   </div>`;
+}
+
+// The longest gap needs nothing but the snapshot list, so it is known before a
+// single diff comes back — it renders at full strength while the rest of the
+// strip is still counting itself up.
+function gapKpi(gap) {
+  if (gap.days < 0) return kpiCard('Longest capture gap', '\u2014', '', { subHtml: '' });
+  return kpiCard('Longest capture gap', fmt(gap.days), '', {
+    unit: 'days',
+    subHtml: `${escapeHtml(monthYear(gap.fromDate))} \u2192 ${escapeHtml(monthYear(gap.toDate))}`,
+    title: 'The crawler did not return during this window',
+  });
 }
 
 function renderKpiSkeleton() {
   const n = state.snapshots.length;
   const first = state.snapshots[0].date, last = state.snapshots[n - 1].date;
   el('dashKpiRow').innerHTML = [
-    kpiCard('Snapshots tracked', n, `Since ${formatDate(first)}`),
-    kpiCard('History span', humanDuration(first, last), `${formatDate(first)} \u2192 ${formatDate(last)}`),
-    kpiCard('Total changes', '\u2026', 'Calculating\u2026', { accent: true }),
-    kpiCard('Longest capture gap', '\u2026', 'Calculating\u2026'),
-    kpiCard('Largest difference', '\u2026', 'Calculating\u2026'),
+    kpiCard('Snapshots tracked', fmt(n), '', { subHtml: `Since ${escapeHtml(formatDate(first))}` }),
+    kpiCard('History span', humanDuration(first, last), '', {
+      subHtml: `${escapeHtml(monthYear(first))} \u2192 ${escapeHtml(monthYear(last))}`,
+    }),
+    kpiCard('Total changes', '\u2014', '', { accent: true, pending: true, subHtml: 'Calculating\u2026' }),
+    gapKpi(longestCaptureGap()),
+    kpiCard('Largest difference', '\u2014', '', { pending: true, subHtml: 'Calculating\u2026' }),
   ].join('');
 }
 
@@ -419,25 +541,35 @@ function renderKpis() {
   let busy = null;
   if (done.length) busy = done.reduce((a, b) => (b.total > a.total ? b : a), done[0]);
 
+  // The three figures are painted in their own series colour but keep their
+  // +/-/~ marks, so the line still reads correctly without the colour.
+  const sep = `<span class="dash-kpi-sub-sep">\u00b7</span>`;
+  const fig = (key, sign, val) =>
+    `<span class="dash-kpi-fig is-${key}"><b>${sign}${fmt(val)}</b></span>`;
+  const countsSub = fig('added', '+', totals.added) + sep +
+    fig('removed', '\u2212', totals.removed) + sep +
+    fig('changed', '~', totals.changed);
+
   el('dashKpiRow').innerHTML = [
-    kpiCard('Snapshots tracked', n, `Since ${formatDate(first)}`),
-    kpiCard('History span', humanDuration(first, last), `${formatDate(first)} \u2192 ${formatDate(last)}`),
-    kpiCard(
-      'Total changes', grandTotal,
-      `+${totals.added} \u00b7 \u2212${totals.removed} \u00b7 ~${totals.changed}`,
-      { accent: true, title: `${totals.added} added, ${totals.removed} removed, ${totals.changed} edited` }
-    ),
-    kpiCard(
-      'Longest capture gap', gap.days >= 0 ? `${gap.days}d` : '\u2014',
-      gap.days >= 0 ? `${formatDate(gap.fromDate)} \u2192 ${formatDate(gap.toDate)}` : '',
-      { title: 'Crawler did not return during this window' }
-    ),
+    kpiCard('Snapshots tracked', fmt(n), '', { subHtml: `Since ${escapeHtml(formatDate(first))}` }),
+    kpiCard('History span', humanDuration(first, last), '', {
+      subHtml: `${escapeHtml(monthYear(first))} \u2192 ${escapeHtml(monthYear(last))}`,
+    }),
+    kpiCard('Total changes', fmt(grandTotal), '', {
+      accent: true,
+      subHtml: countsSub,
+      title: `Across ${fmt(done.length)} analyzed comparisons: ` +
+        `${fmt(totals.added)} added, ${fmt(totals.removed)} removed, ${fmt(totals.changed)} edited`,
+    }),
+    gapKpi(gap),
     busy
-      ? kpiCard('Largest difference', busy.total, `${formatDate(busy.fromDate)} \u2192 ${formatDate(busy.toDate)}`, {
+      ? kpiCard('Largest difference', fmt(busy.total), '', {
           accent: true, id: 'dashBusiestKpi', onClick: true,
-          title: (busy.skipped > 0 ? `Spans ${busy.skipped} skipped snapshot${busy.skipped === 1 ? '' : 's'} \u2014 ` : '') + 'Click to open this comparison',
+          subHtml: `${escapeHtml(monthYear(busy.fromDate))} \u2192 ${escapeHtml(monthYear(busy.toDate))}`,
+          title: (busy.skipped > 0 ? `Spans ${busy.skipped} unanalyzed snapshot${busy.skipped === 1 ? '' : 's'}. ` : '') +
+            'Click to open this comparison',
         })
-      : kpiCard('Largest difference', 0, '\u2014'),
+      : kpiCard('Largest difference', '0', '', { subHtml: '' }),
   ].join('');
 
   if (busy) el('dashBusiestKpi').addEventListener('click', () => jumpToComparison(busy.fromIdx, busy.toIdx));
@@ -445,8 +577,13 @@ function renderKpis() {
 
 // ---------------------------------------------------------------- activity chart (SVG)
 function seriesTotal(iv) {
-  return (DASH.series.added ? iv.added : 0) + (DASH.series.removed ? iv.removed : 0) + (DASH.series.changed ? iv.changed : 0);
+  return iv.added + iv.removed + iv.changed;
 }
+
+// Chart geometry, in one place: the plots are measured to their container, so
+// these numbers are pixels on screen and the type never gets resampled.
+const ACTIVITY_H = 348, ACTIVITY_ML = 60, ACTIVITY_MR = 22, ACTIVITY_MT = 30, ACTIVITY_MB = 48;
+
 
 function renderActivityChart(intervals) {
   const wrap = el('dashActivityChart');
@@ -455,56 +592,92 @@ function renderActivityChart(intervals) {
     return;
   }
 
-  const W = 1000, H = 300, ML = 44, MR = 12, MT = 16, MB = 40;
+  const W = chartWidth(wrap);
+  const compact = W < COMPACT_W;
+  const H = compact ? 252 : ACTIVITY_H;
+  const ML = compact ? 34 : ACTIVITY_ML;
+  const MR = compact ? 10 : ACTIVITY_MR;
+  const MT = compact ? 18 : ACTIVITY_MT;
+  const MB = compact ? 36 : ACTIVITY_MB;
   const plotW = W - ML - MR, plotH = H - MT - MB;
   const n = intervals.length;
   const band = plotW / n;
-  const barW = Math.max(2, Math.min(band * 0.62, 34));
+  // Caps the width so a coarse reading does not become four fat slabs.
+  const barW = Math.max(3, Math.min(band * 0.6, 30));
 
-  const maxVal = Math.max(1, ...intervals.map(seriesTotal));
-  const y = (v) => (v / maxVal) * plotH;
+  const peak = Math.max(1, ...intervals.map(seriesTotal));
+  const { step, top: axisTop } = niceScale(peak, 4);
+  const y = (v) => (v / axisTop) * plotH;
 
-  let gridlines = '';
-  let ticksLabels = '';
-  for (let g = 0; g <= 4; g++) {
-    const val = Math.round((maxVal * g) / 4);
+  let grid = '';
+  // Ticks run to the top of the scale, not to the peak, so the highest number
+  // printed is the number the axis actually reaches.
+  for (let g = 0; g * step <= axisTop + 1e-9; g++) {
+    const val = g * step;
     const yy = MT + plotH - y(val);
-    gridlines += `<line class="dash-gridline" x1="${ML}" y1="${yy}" x2="${W - MR}" y2="${yy}" />`;
-    ticksLabels += `<text class="dash-axis-label" x="${ML - 8}" y="${yy + 3}" text-anchor="end">${val}</text>`;
+    if (g > 0) grid += `<line class="dash-gridline" x1="${ML}" y1="${yy}" x2="${W - MR}" y2="${yy}" />`;
+    grid += `<text class="dash-axis-label" x="${ML - 10}" y="${yy + 4}" text-anchor="end">${fmt(Math.round(val))}</text>`;
   }
 
-  const labelEvery = Math.max(1, Math.ceil(n / 7));
   let bars = '';
-  let xLabels = '';
   intervals.forEach((iv, i) => {
     const x = ML + i * band + (band - barW) / 2;
-    let cursorY = MT + plotH;
-    let segs = '';
-    [
-      ['removed', iv.removed, 'var(--removed)'],
-      ['changed', iv.changed, 'var(--changed)'],
-      ['added', iv.added, 'var(--added)'],
-    ].forEach(([key, val, color]) => {
-      if (!DASH.series[key] || !val) return;
-      const h = y(val);
-      cursorY -= h;
-      segs += `<rect x="${x}" y="${cursorY}" width="${barW}" height="${h}" fill="${color}" />`;
-    });
-    bars += `<g class="dash-bar" data-i="${i}">
-        <rect x="${x}" y="${MT}" width="${barW}" height="${plotH}" fill="transparent" />
-        ${segs}
-      </g>`;
+    const stack = SERIES_STACK
+      .filter((key) => iv[key])
+      .map((key) => ({ key, val: iv[key] }));
 
-    if (i % labelEvery === 0 || i === n - 1) {
-      const lbl = iv.label || shortDate(iv.toDate);
-      xLabels += `<text class="dash-axis-label" x="${x + barW / 2}" y="${H - MB + 16}" text-anchor="middle">${escapeHtml(lbl)}</text>`;
-    }
+    let bottom = MT + plotH;
+    let segs = '';
+    stack.forEach((s, k) => {
+      const h = Math.max(1.5, y(s.val));
+      const top = bottom - h;
+      const isTop = k === stack.length - 1;
+      // A hairline of card showing through between two stacked colours, so the
+      // boundary between them stays legible when the tones sit close together.
+      const segTop = k === 0 ? top : top + 1;
+      const segH = Math.max(0.8, h - (k === 0 ? 0 : 1));
+      const shape = isTop
+        ? topRoundedRect(x, segTop, barW, segH, Math.min(2, barW / 2))
+        : `<rect x="${x}" y="${segTop}" width="${barW}" height="${segH}" rx="1" />`;
+      segs += `<g fill="var(--${s.key})" class="dash-bar-seg">${shape}</g>`;
+      bottom -= h;
+    });
+
+    bars += `<g class="dash-bar" data-i="${i}">
+        <rect class="dash-bar-wash" x="${ML + i * band}" y="${MT}" width="${band}" height="${plotH}" />
+        ${segs}
+        <rect class="dash-bar-hit" x="${ML + i * band}" y="${MT}" width="${band}" height="${plotH}" fill="transparent" />
+      </g>`;
   });
 
-  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-    ${gridlines}
+  // Date labels are placed greedily and dropped when they would collide. The
+  // last bar always keeps its date, because "when does this record end" is the
+  // one question an axis must answer — it displaces its neighbour instead of
+  // being dropped itself.
+  const labelEvery = Math.max(1, Math.ceil(n / 8));
+  const marks = [];
+  const MIN_LABEL_GAP = 14;
+  for (let i = 0; i < n; i += labelEvery) marks.push(i);
+  if (marks[marks.length - 1] !== n - 1) marks.push(n - 1);
+
+  const kept = [];
+  marks.forEach((i) => {
+    const cx = ML + i * band + band / 2;
+    const text = intervals[i].label || shortDate(intervals[i].toDate);
+    const half = Math.max(17, text.length * 3.3);
+    while (kept.length && cx - half < kept[kept.length - 1].right + MIN_LABEL_GAP) {
+      if (i === n - 1) kept.pop();
+      else return;
+    }
+    kept.push({ cx, text, right: cx + half });
+  });
+  const xLabels = kept.map((m) =>
+    `<text class="dash-axis-label" x="${m.cx}" y="${H - MB + 24}" text-anchor="middle">${escapeHtml(m.text)}</text>`
+  ).join('');
+
+  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+    ${grid}
     <line class="dash-axis-line" x1="${ML}" y1="${MT + plotH}" x2="${W - MR}" y2="${MT + plotH}" />
-    ${ticksLabels}
     ${bars}
     ${xLabels}
   </svg>`;
@@ -525,14 +698,16 @@ function shortDate(iso) {
 function showDashTooltip(e, iv) {
   const tip = el('dashTooltip');
   const label = iv.label ? iv.label : `${formatDate(iv.fromDate)} \u2192 ${formatDate(iv.toDate)}`;
+  const total = iv.added + iv.removed + iv.changed;
   const skipNote = iv.skipped > 0
-    ? `<div class="dash-tooltip-skip">${iv.skipped} snapshot${iv.skipped === 1 ? '' : 's'} skipped in between</div>`
+    ? `<div class="dash-tooltip-skip">${fmt(iv.skipped)} archived snapshot${iv.skipped === 1 ? '' : 's'} in between were not analyzed</div>`
     : '';
   tip.innerHTML = `
     <div class="dash-tooltip-title">${escapeHtml(label)}</div>
-    <div class="dash-tooltip-row"><i class="dot dot-added"></i>${iv.added} added</div>
-    <div class="dash-tooltip-row"><i class="dot dot-removed"></i>${iv.removed} removed</div>
-    <div class="dash-tooltip-row"><i class="dot dot-changed"></i>${iv.changed} changed</div>
+    <div class="dash-tooltip-row"><i class="dot dot-added"></i>added<b>${fmt(iv.added)}</b></div>
+    <div class="dash-tooltip-row"><i class="dot dot-removed"></i>removed<b>${fmt(iv.removed)}</b></div>
+    <div class="dash-tooltip-row"><i class="dot dot-changed"></i>changed<b>${fmt(iv.changed)}</b></div>
+    <div class="dash-tooltip-row dash-tooltip-row-total">in total<b>${fmt(total)}</b></div>
     ${skipNote}
   `;
   tip.hidden = false;
@@ -540,8 +715,14 @@ function showDashTooltip(e, iv) {
 }
 function moveDashTooltip(e) {
   const tip = el('dashTooltip');
-  tip.style.left = Math.min(e.clientX + 14, window.innerWidth - 260) + 'px';
-  tip.style.top = Math.max(e.clientY - 10, 10) + 'px';
+  const w = tip.offsetWidth || 240;
+  const h = tip.offsetHeight || 120;
+  // Flip to the other side of the cursor rather than let the card run off the
+  // right or bottom edge of the window.
+  const left = e.clientX + 16 + w > window.innerWidth - 12 ? e.clientX - w - 16 : e.clientX + 16;
+  const top = Math.min(Math.max(e.clientY - 12, 12), window.innerHeight - h - 12);
+  tip.style.left = Math.max(12, left) + 'px';
+  tip.style.top = top + 'px';
 }
 function hideDashTooltip() { el('dashTooltip').hidden = true; }
 
@@ -561,6 +742,7 @@ function renderComposition(intervals) {
   }, { added: 0, removed: 0, changed: 0 });
   const grand = totals.added + totals.removed + totals.changed;
 
+  el('dashCompositionHint').textContent = grand ? `${fmt(grand)} changes in all` : 'Nothing to chart';
   if (!grand) {
     wrap.innerHTML = `<p class="dash-empty-note">No structural changes in this range.</p>`;
     return;
@@ -573,31 +755,21 @@ function renderComposition(intervals) {
     ['changed', 'Changed', totals.changed],
   ];
 
-  const dominant = rows.reduce((a, b) => (b[2] > a[2] ? b : a), rows[0]);
-  let readout = '';
-  if (dominant[2] / grand > 0.45) {
-    const phrase = dominant[0] === 'added' ? 'growing with new content'
-      : dominant[0] === 'removed' ? 'shedding content over time'
-        : 'mostly edits, not new material';
-    readout = `<p class="dash-composition-readout muted small">Mostly ${phrase}.</p>`;
-  }
-
   wrap.innerHTML = `
     <div class="dash-composition-total">
-      ${totals.added ? `<span class="seg-added" style="width:${pct(totals.added)}%"></span>` : ''}
-      ${totals.removed ? `<span class="seg-removed" style="width:${pct(totals.removed)}%"></span>` : ''}
-      ${totals.changed ? `<span class="seg-changed" style="width:${pct(totals.changed)}%"></span>` : ''}
+      ${rows.filter(([, , val]) => val).map(([key, label, val]) =>
+        `<span class="seg-${key}" style="width:${(val / grand) * 100}%" title="${fmt(val)} ${label.toLowerCase()}"></span>`
+      ).join('')}
     </div>
     <div class="dash-row-list">
       ${rows.map(([key, label, val]) => `
         <div class="dash-row">
           <span class="dash-row-label"><i class="dot dot-${key}"></i>${label}</span>
           <div class="dash-row-track"><div class="dash-row-fill" style="width:${Math.max(3, pct(val))}%; background:var(--${key});"></div></div>
-          <span class="dash-row-count">${pct(val)}%</span>
+          <span class="dash-row-count">${fmt(val)}<span class="dash-row-pct">${pct(val)}%</span></span>
         </div>
       `).join('')}
     </div>
-    ${readout}
   `;
 }
 
@@ -607,19 +779,24 @@ function renderTagChart(intervals) {
   const counts = {};
   intervals.forEach((iv) => Object.entries(iv.tagCounts).forEach(([t, c]) => { counts[t] = (counts[t] || 0) + c; }));
 
-  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 7);
-  if (!entries.length) {
+  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  el('dashTagHint').textContent = ranked.length
+    ? `${ranked.length} element type${ranked.length === 1 ? '' : 's'} touched`
+    : 'Nothing to chart';
+  if (!ranked.length) {
     wrap.innerHTML = `<p class="dash-empty-note">No structural changes in this range.</p>`;
     return;
   }
+  const entries = ranked.slice(0, 7);
   const max = entries[0][1];
+  const touched = ranked.reduce((a, [, c]) => a + c, 0);
 
   wrap.innerHTML = `<div class="dash-row-list">
     ${entries.map(([tag, count]) => `
       <div class="dash-row">
-        <span class="dash-row-label" title="&lt;${escapeHtml(tag)}&gt;">${escapeHtml(tagLabel(tag))}</span>
+        <span class="dash-row-label" title="&lt;${escapeHtml(tag)}&gt;"><i class="dot dot-blank"></i>${escapeHtml(tagLabel(tag))}</span>
         <div class="dash-row-track"><div class="dash-row-fill" style="width:${Math.max(4, (count / max) * 100)}%;"></div></div>
-        <span class="dash-row-count">${count}</span>
+        <span class="dash-row-count">${fmt(count)}</span>
       </div>
     `).join('')}
   </div>`;
@@ -634,7 +811,11 @@ function renderCadence() {
   const maxT = new Date(snaps[snaps.length - 1].date).getTime();
   const span = Math.max(1, maxT - minT);
 
-  const BUCKETS = Math.min(48, Math.max(12, snaps.length));
+  const W = chartWidth(wrap);
+  const compact = W < COMPACT_W;
+  // Roughly one bar per 22px, so the density stays honest rather than being
+  // fixed at a count that looks right in one window width and wrong in another.
+  const BUCKETS = Math.max(10, Math.min(56, Math.round(W / (compact ? 16 : 22))));
   const counts = new Array(BUCKETS).fill(0);
   snaps.forEach((s) => {
     const t = new Date(s.date).getTime();
@@ -643,16 +824,17 @@ function renderCadence() {
     counts[idx]++;
   });
 
-  const W = 1000, H = 130, ML = 34, MR = 10, MT = 10, MB = 26;
+  const H = compact ? 136 : 172;
+  const ML = compact ? 10 : 20, MR = compact ? 10 : 20, MT = compact ? 14 : 30, MB = compact ? 30 : 32;
   const plotW = W - ML - MR, plotH = H - MT - MB;
   const band = plotW / BUCKETS;
-  const barW = Math.max(1.5, band * 0.72);
+  const barW = Math.max(2, Math.min(band * 0.66, 20));
   const maxCount = Math.max(1, ...counts);
 
   let bars = '';
   const bucketMeta = [];
   counts.forEach((c, i) => {
-    const h = (c / maxCount) * plotH;
+    const h = c ? Math.max(3, (c / maxCount) * plotH) : 0;
     const x = ML + i * band + (band - barW) / 2;
     const y = MT + plotH - h;
     bucketMeta.push({
@@ -661,16 +843,20 @@ function renderCadence() {
       to: minT + (span * (i + 1)) / BUCKETS,
     });
     bars += `<g class="dash-bar" data-i="${i}">
-      <rect x="${x - 1}" y="${MT}" width="${barW + 2}" height="${plotH}" fill="transparent" />
-      <rect x="${x}" y="${y}" width="${barW}" height="${Math.max(h, c ? 1.5 : 0)}" fill="${c ? 'var(--ink-faint)' : 'transparent'}" rx="1.5" />
+      <rect class="dash-bar-wash" x="${ML + i * band}" y="${MT}" width="${band}" height="${plotH}" />
+      ${c ? `<g fill="var(--coverage)" class="dash-bar-seg">${topRoundedRect(x, y, barW, h, Math.min(2, barW / 2))}</g>` : ''}
+      <rect class="dash-bar-hit" x="${ML + i * band}" y="${MT}" width="${band}" height="${plotH}" fill="transparent" />
     </g>`;
   });
 
-  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-    <line class="dash-axis-line" x1="${ML}" y1="${MT + plotH}" x2="${W - MR}" y2="${MT + plotH}" />
+  const atMs = (t) => formatDate(new Date(t).toISOString());
+
+  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
     ${bars}
-    <text class="dash-axis-label" x="${ML}" y="${H - MB + 18}" text-anchor="start">${escapeHtml(formatDate(snaps[0].date))}</text>
-    <text class="dash-axis-label" x="${W - MR}" y="${H - MB + 18}" text-anchor="end">${escapeHtml(formatDate(snaps[snaps.length - 1].date))}</text>
+    <line class="dash-axis-line" x1="${ML}" y1="${MT + plotH}" x2="${W - MR}" y2="${MT + plotH}" />
+    <text class="dash-axis-label" x="${ML}" y="${H - MB + 22}" text-anchor="start">${escapeHtml(atMs(minT))}</text>
+    <text class="dash-axis-label" x="${W / 2}" y="${H - MB + 22}" text-anchor="middle">${escapeHtml(atMs(minT + span / 2))}</text>
+    <text class="dash-axis-label" x="${W - MR}" y="${H - MB + 22}" text-anchor="end">${escapeHtml(atMs(maxT))}</text>
   </svg>`;
 
   wrap.querySelectorAll('.dash-bar').forEach((g) => {
@@ -687,7 +873,7 @@ function showCadenceTooltip(e, bucket) {
   const tip = el('dashTooltip');
   tip.innerHTML = `
     <div class="dash-tooltip-title">${escapeHtml(formatDate(new Date(bucket.from).toISOString()))} \u2013 ${escapeHtml(formatDate(new Date(bucket.to).toISOString()))}</div>
-    <div class="dash-tooltip-row">${bucket.count} capture${bucket.count === 1 ? '' : 's'}</div>
+    <div class="dash-tooltip-row"><i class="dot" style="background:var(--coverage)"></i>captures<b>${fmt(bucket.count)}</b></div>
   `;
   tip.hidden = false;
   moveDashTooltip(e);
@@ -700,22 +886,24 @@ function renderGapBreakdown(snaps) {
     gapsDays.push(Math.round((new Date(snaps[i + 1].date) - new Date(snaps[i].date)) / 86400000));
   }
   const buckets = [
-    ['< 1 day', (d) => d < 1],
+    ['Under a day', (d) => d < 1],
     ['1\u20137 days', (d) => d >= 1 && d < 7],
     ['1\u20134 weeks', (d) => d >= 7 && d < 30],
     ['1\u20136 months', (d) => d >= 30 && d < 182],
-    ['6 mo+', (d) => d >= 182],
+    ['Six months or more', (d) => d >= 182],
   ].map(([label, test]) => [label, gapsDays.filter(test).length]);
   const maxBucket = Math.max(1, ...buckets.map((b) => b[1]));
 
   wrap.innerHTML = `
-    <p class="dash-gap-breakdown-label muted small">Gaps between captures</p>
+    <p class="dash-gap-breakdown-label">Gaps between captures</p>
     <div class="dash-row-list">
       ${buckets.map(([label, count]) => `
         <div class="dash-row">
           <span class="dash-row-label">${label}</span>
-          <div class="dash-row-track"><div class="dash-row-fill" style="width:${Math.max(3, (count / maxBucket) * 100)}%; background:var(--ink-faint);"></div></div>
-          <span class="dash-row-count">${count}</span>
+          <div class="dash-row-track">${count
+            ? `<div class="dash-row-fill" style="width:${Math.max(4, (count / maxBucket) * 100)}%"></div>`
+            : ''}</div>
+          <span class="dash-row-count">${fmt(count)}</span>
         </div>
       `).join('')}
     </div>
@@ -732,21 +920,24 @@ function renderLeaderboard(intervals) {
   }
   const maxTotal = Math.max(1, ...top.map((t) => t.total));
 
+  // Bar widths are a share of the largest row, so the leader's bar fills the
+  // column and every other row is read against it at a glance.
+  const pctOfMax = (v) => Math.max(0, (v / maxTotal) * 100);
+
   wrap.innerHTML = top.map((iv, i) => {
     const label = iv.label ? iv.label : `${formatDate(iv.fromDate)} \u2192 ${formatDate(iv.toDate)}`;
-    const pctAdded = Math.max(0, (iv.added / maxTotal) * 100);
-    const pctRemoved = Math.max(0, (iv.removed / maxTotal) * 100);
-    const pctChanged = Math.max(0, (iv.changed / maxTotal) * 100);
-    const title = iv.skipped > 0 ? ` title="Spans ${iv.skipped} skipped snapshot${iv.skipped === 1 ? '' : 's'}"` : '';
+    const title = iv.skipped > 0
+      ? ` title="Spans ${fmt(iv.skipped)} unanalyzed snapshot${iv.skipped === 1 ? '' : 's'}"`
+      : '';
     return `<div class="dash-lb-row" data-i="${i}"${title}>
       <span class="dash-lb-rank">${i + 1}</span>
       <span class="dash-lb-dates">${escapeHtml(label)}</span>
       <span class="dash-lb-bar">
-        ${iv.added ? `<span class="seg-added" style="width:${pctAdded}%"></span>` : ''}
-        ${iv.removed ? `<span class="seg-removed" style="width:${pctRemoved}%"></span>` : ''}
-        ${iv.changed ? `<span class="seg-changed" style="width:${pctChanged}%"></span>` : ''}
+        ${iv.added ? `<span class="seg-added" style="width:${pctOfMax(iv.added)}%"></span>` : ''}
+        ${iv.removed ? `<span class="seg-removed" style="width:${pctOfMax(iv.removed)}%"></span>` : ''}
+        ${iv.changed ? `<span class="seg-changed" style="width:${pctOfMax(iv.changed)}%"></span>` : ''}
       </span>
-      <span class="dash-lb-total">${iv.total} change${iv.total === 1 ? '' : 's'}</span>
+      <span class="dash-lb-total">${fmt(iv.total)}<em>changes</em></span>
     </div>`;
   }).join('');
 

@@ -49,6 +49,33 @@ The two Turso variables are the only hard requirement. Get the URL with
 them set, everything works except the Insight tab, which will tell you it
 isn't configured rather than failing silently.
 
+### Dashboard analysis cache
+
+Reading a long history costs one `/api/diff` per sampled snapshot pair, and the
+result is stable for a given record. The dashboard therefore keeps its analysis
+in memory, keyed on the URL, the snapshot count and the two end timestamps.
+Closing and reopening it redraws instantly; so does returning to a site you
+already looked at. A record whose snapshot list has actually changed is
+analyzed afresh. Reopening mid-run adopts the run already in flight instead of
+starting a second one, and failed pairs are deliberately not cached so a flaky
+minute stays retryable by reopening.
+
+### Working on the dashboard UI
+
+Reaching the dashboard for real means a slow Wayback round trip, so there
+is a harness that renders it offline against a synthetic 27-year archive:
+
+```bash
+node scripts/preview-dashboard.js
+```
+
+It writes one self-contained HTML file into `.freebuff/preview/` that
+inlines the real `styles.css`, the real `dashboard.js` and the real markup
+from `index.html`, then feeds it a plausible capture history through a
+mocked `/api/diff`. Nothing is re-implemented, so what you see is what the
+shipped page draws. A fresh filename is used per run because the preview
+server caches by path.
+
 ## Deploying to Vercel
 
 The app is a plain Express server plus a static frontend, so it runs on
@@ -131,5 +158,12 @@ lib/diffEngine.js   The block-level DOM diff
 lib/insight.js      Grounded AI explanation of a change
 lib/notes.js        The per-user notes journal
 lib/rateLimiter.js  Keeps requests to the Archive spaced out
-public/             The frontend: index.html, styles.css, app.js
+public/             The frontend: index.html, styles.css, app.js, dashboard.js
+scripts/            Dev-only helpers (favicon generation, the dashboard preview harness)
 ```
+
+The dashboard draws every chart itself as inline SVG rather than pulling in
+a charting library, and measures each plot to its own container so axis
+type is never resampled: see `renderActivityChart` in
+`public/dashboard.js` and the chart primitives in the `Site dashboard`
+section of `public/styles.css`.

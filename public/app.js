@@ -341,9 +341,9 @@ document.addEventListener('keydown', (e) => {
 
 function renderChangeCounts(counts) {
   el('changeCounts').innerHTML =
-    `<span><b>${counts.added}</b> added</span>` +
-    `<span><b>${counts.removed}</b> removed</span>` +
-    `<span><b>${counts.changed}</b> changed</span>`;
+    `<span class="change-count"><i class="dot dot-added"></i><b>${counts.added}</b> added</span>` +
+    `<span class="change-count"><i class="dot dot-removed"></i><b>${counts.removed}</b> removed</span>` +
+    `<span class="change-count"><i class="dot dot-changed"></i><b>${counts.changed}</b> changed</span>`;
 }
 
 function renderChangesList(changes) {
