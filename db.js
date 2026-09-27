@@ -82,4 +82,22 @@ async function initSchema() {
   // a clean start on Turso rather than dragging dead schema along.
 }
 
-module.exports = { db, initSchema };
+// On a long-running server initSchema is called once at boot. On Vercel
+// there is no boot, so ready() is what gets awaited instead: it runs the
+// schema exactly once per container and hands the same promise to every
+// other request that lands in that container. A failed attempt clears the
+// cached promise so the next request retries rather than being stuck
+// replaying one rejection forever.
+let schemaPromise = null;
+
+function ready() {
+  if (!schemaPromise) {
+    schemaPromise = initSchema().catch((err) => {
+      schemaPromise = null;
+      throw err;
+    });
+  }
+  return schemaPromise;
+}
+
+module.exports = { db, initSchema, ready };

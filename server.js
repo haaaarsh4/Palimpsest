@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 
-const { initSchema } = require('./db');
+const { initSchema, ready } = require('./db');
 const { fetchSnapshotList, normalizeInputUrl } = require('./lib/cdx');
 const { fetchArchivedHtml } = require('./lib/fetchHtml');
 const { diffSnapshots } = require('./lib/diffEngine');
@@ -36,6 +36,23 @@ app.use((req, res, next) => {
     req.pdiffUserId = uid;
   }
   next();
+});
+
+// Every table has to actually exist before we serve a request that needs
+// one. On Render that used to be a startup concern: init the schema, then
+// listen. Serverless has no startup - a function is loaded, handed one
+// request, and frozen. So schema setup is middleware, registered before
+// every route: the first request in a cold container pays for it, later
+// requests in that same container reuse the already-resolved promise, and a
+// failure comes back as a 503 with a readable message instead of a hang.
+app.use(async (req, res, next) => {
+  try {
+    await ready();
+    next();
+  } catch (err) {
+    console.error('Failed to set up the database schema:', err);
+    res.status(503).json({ error: 'Database is not reachable right now. Try again in a moment.' });
+  }
 });
 
 // ---- Snapshot list (feeds the timeline slider) ----------------------------
@@ -143,16 +160,14 @@ app.post('/api/insight', async (req, res) => {
   }
 });
 
-// Every table has to actually exist before we start accepting requests -
-// initSchema is async now (CREATE TABLE over the network), so this waits
-// for it to finish rather than firing it off as a side effect on require.
-initSchema()
-  .then(() => {
+// Only listen when this file is the entry point. When Vercel requires it
+// from api/index.js there is no port to bind - it wants the app itself.
+if (require.main === module) {
+  ready().then(() => {
     app.listen(PORT, () => {
       console.log(`Palimpsest is running at http://localhost:${PORT}`);
     });
-  })
-  .catch((err) => {
-    console.error('Failed to set up the database schema:', err);
-    process.exit(1);
   });
+}
+
+module.exports = { app, ready };

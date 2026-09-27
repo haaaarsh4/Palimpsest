@@ -59,6 +59,10 @@
         <span class="legend-item"><i class="dot dot-removed"></i>removed</span>
         <span class="legend-item"><i class="dot dot-changed"></i>changed</span>
       </div>
+      <button id="openDashboardBtn" class="secondary-btn dash-open-btn" type="button">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 20V10M11 20V4M18 20v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Site dashboard
+      </button>
     </div>
 
     <div class="timeline-track-wrap">
@@ -283,6 +287,104 @@
   </div>
 
 
+  <div id="dashboardModal" class="dash-modal" hidden>
+    <div id="dashboardBackdrop" class="dash-modal-backdrop"></div>
+    <div class="dash-modal-panel">
+      <div class="dash-modal-header">
+        <div class="dash-modal-heading">
+          <h3 id="dashSiteName" class="dash-title">&nbsp;</h3>
+          <p id="dashSubtitle" class="muted small"></p>
+        </div>
+        <button id="dashModalClose" class="pane-modal-close" type="button" title="Close">&times;</button>
+      </div>
+
+      <div class="dash-body" id="dashBody">
+
+        <div class="dash-kpi-row" id="dashKpiRow"></div>
+
+        <div class="dash-toolbar">
+          <div class="dash-toolbar-row">
+            <div class="dash-control-group">
+              <span class="dash-control-label">Detail</span>
+              <div class="view-toggle dash-toggle" id="dashResolutionToggle">
+                <button class="toggle-btn" data-value="coarse" type="button" title="Fastest, skips the most between bars">Coarse</button>
+                <button class="toggle-btn active" data-value="balanced" type="button" title="A balance of speed and detail">Balanced</button>
+                <button class="toggle-btn" data-value="fine" type="button" title="Closest to the full record, slower to load">Fine</button>
+              </div>
+            </div>
+
+            <div class="dash-control-divider"></div>
+
+            <div class="dash-control-group">
+              <span class="dash-control-label">Group by</span>
+              <div class="view-toggle dash-toggle">
+                <button id="dashBucketSnapshot" class="toggle-btn active" type="button">Snapshot</button>
+                <button id="dashBucketMonth" class="toggle-btn" type="button">Month</button>
+              </div>
+            </div>
+
+            <div class="dash-control-divider"></div>
+
+            <div class="dash-control-group dash-series-toggles">
+              <span class="dash-control-label">Show</span>
+              <label class="dash-checkbox"><input type="checkbox" id="dashSeriesAdded" checked /><i class="dot dot-added"></i>Added</label>
+              <label class="dash-checkbox"><input type="checkbox" id="dashSeriesRemoved" checked /><i class="dot dot-removed"></i>Removed</label>
+              <label class="dash-checkbox"><input type="checkbox" id="dashSeriesChanged" checked /><i class="dot dot-changed"></i>Changed</label>
+            </div>
+          </div>
+
+          <div class="dash-toolbar-row dash-focus-row" id="dashRangeFilter" hidden>
+            <span class="dash-control-label">Focus</span>
+            <select id="dashRangeFrom" class="dash-focus-select"></select>
+            <span class="dash-focus-arrow">&rarr;</span>
+            <select id="dashRangeTo" class="dash-focus-select"></select>
+            <button id="dashRangeReset" class="text-btn dash-range-reset" type="button">Reset</button>
+          </div>
+        </div>
+
+        <div class="dash-card dash-card-main">
+          <div class="dash-card-header">
+            <h4>Change activity over time</h4>
+            <span class="muted small" id="dashActivityHint">Click any bar to open that comparison</span>
+          </div>
+          <div class="dash-chart-wrap" id="dashActivityChart"></div>
+        </div>
+
+        <div class="dash-grid-2">
+          <div class="dash-card">
+            <div class="dash-card-header"><h4>Change composition</h4></div>
+            <div class="dash-chart-wrap dash-chart-small" id="dashCompositionChart"></div>
+          </div>
+          <div class="dash-card">
+            <div class="dash-card-header"><h4>What tends to change</h4></div>
+            <div class="dash-chart-wrap dash-chart-small" id="dashTagChart"></div>
+          </div>
+        </div>
+
+        <div class="dash-card">
+          <div class="dash-card-header">
+            <h4>Archive coverage</h4>
+            <span class="muted small">Gaps mean the crawler didn't visit &mdash; not that nothing changed</span>
+          </div>
+          <div class="dash-chart-wrap" id="dashCadenceChart"></div>
+          <div id="dashGapBreakdown" class="dash-gap-breakdown"></div>
+        </div>
+
+        <div class="dash-card">
+          <div class="dash-card-header">
+            <h4>Largest differences between snapshots</h4>
+            <span class="muted small">Between two captures, not one event</span>
+          </div>
+          <div id="dashLeaderboard" class="dash-leaderboard"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div id="dashTooltip" class="dash-tooltip" hidden></div>
+
   <script src="/app.js"></script>
+  <script src="/dashboard.js"></script>
 </body>
 </html>

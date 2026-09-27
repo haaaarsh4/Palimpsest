@@ -1,6 +1,7 @@
 node_modules/
 .env
 data/
+.freebuff/
 *.db
 *.db-shm
 *.db-wal

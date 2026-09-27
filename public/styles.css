@@ -837,3 +837,203 @@ a { color: var(--accent); }
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
   html { scroll-behavior: auto; }
 }
+
+
+/* =======================================================================
+   Site dashboard — a second, denser record of the same paper-and-ink
+   object: same radii, same terracotta accent, same added/removed/changed
+   palette carried over from the diff view. Rebuilt with one governing
+   rule: generous, consistent rhythm everywhere — a fixed vertical gap
+   between every major block, a fixed internal padding on every card, and
+   nothing positioned by hand (no absolutely-positioned drag handles) that
+   could drift out of alignment with its own container.
+========================================================================== */
+
+.dash-open-btn { padding: 9px 16px; font-size: 12.5px; display: inline-flex; align-items: center; gap: 8px; }
+.dash-open-btn svg { width: 14px; height: 14px; }
+
+.dash-modal { position: fixed; inset: 0; z-index: 120; display: flex; align-items: center; justify-content: center; padding: 32px; }
+.dash-modal[hidden] { display: none; }
+.dash-modal-backdrop { position: absolute; inset: 0; background: rgba(23, 20, 14, 0.66); backdrop-filter: blur(4px); }
+
+.dash-modal-panel {
+  position: relative;
+  width: min(94vw, 1240px);
+  height: min(90vh, 980px);
+  background: var(--paper-alt);
+  background-image: radial-gradient(rgba(27, 24, 17, 0.045) 1px, transparent 1px);
+  background-size: 18px 18px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lifted);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---------- header ---------- */
+.dash-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 34px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.dash-modal-heading { min-width: 0; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.dash-title {
+  font-family: var(--serif); font-style: italic; font-weight: 600;
+  font-size: 21px; margin: 0; color: var(--ink); word-break: break-all;
+}
+.dash-modal-heading .muted { margin: 0; }
+.dash-modal-header .pane-modal-close { width: 32px; height: 32px; font-size: 20px; flex-shrink: 0; }
+
+/* ---------- body: one governing rhythm, 30px between every block ---------- */
+.dash-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 30px 34px 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+/* ---------- KPI strip ---------- */
+.dash-kpi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+.dash-kpi {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); padding: 20px 20px 18px; display: flex; flex-direction: column; gap: 8px;
+  min-width: 0;
+}
+.dash-kpi-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); font-weight: 700; }
+.dash-kpi-value { font-family: var(--serif); font-size: 26px; font-weight: 600; color: var(--ink); line-height: 1.1; }
+.dash-kpi-value.accent { color: var(--accent); }
+.dash-kpi-sub {
+  font-size: 12px; color: var(--ink-soft); font-family: var(--mono);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dash-kpi-clickable { cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease; }
+.dash-kpi-clickable:hover { border-color: var(--accent); box-shadow: var(--shadow-panel); transform: translateY(-1px); }
+
+/* ---------- toolbar: one card holding both control rows, with a
+   divider between them so the relationship between "how it's analyzed"
+   and "what range you're looking at" reads clearly without either
+   feeling bolted onto the other ---------- */
+.dash-toolbar {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 18px 22px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.dash-toolbar-row { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.dash-control-group { display: flex; align-items: center; gap: 11px; }
+.dash-control-divider { width: 1px; align-self: stretch; background: var(--line-strong); opacity: 0.55; }
+.dash-control-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); font-weight: 700; white-space: nowrap; }
+.dash-toggle { padding: 3px; }
+.dash-toggle .toggle-btn { padding: 6px 14px; font-size: 12px; }
+.dash-series-toggles { gap: 16px; }
+.dash-checkbox { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-soft); cursor: pointer; user-select: none; }
+.dash-checkbox input { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; margin: 0; }
+
+/* ---------- focus row: two plain <select> elements rather than a
+   hand-positioned drag slider. A select can never overlap its own label
+   or drift off its track — there is no track. ---------- */
+.dash-focus-row { padding-top: 16px; border-top: 1px solid var(--line); }
+.dash-focus-row[hidden] { display: none; }
+.dash-focus-select {
+  border: 1px solid var(--line-strong); background: var(--card); color: var(--ink);
+  font-family: var(--mono); font-size: 12.5px; padding: 7px 12px;
+  border-radius: 100px; cursor: pointer; max-width: 220px;
+}
+.dash-focus-select:focus { outline: none; border-color: var(--accent); }
+.dash-focus-arrow { color: var(--ink-faint); font-size: 13px; }
+.dash-range-reset { font-size: 12px; margin-left: 4px; }
+
+/* ---------- cards ---------- */
+.dash-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-panel); padding: 26px 28px 24px; }
+.dash-card-header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+.dash-card-header h4 { font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 18px; margin: 0; color: var(--ink); }
+.dash-card-header .muted.small { white-space: nowrap; }
+.dash-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+
+.dash-chart-wrap { width: 100%; min-height: 280px; display: flex; flex-direction: column; justify-content: center; }
+.dash-chart-wrap svg { width: 100%; height: auto; display: block; overflow: visible; }
+.dash-chart-small { min-height: 200px; }
+.dash-chart-small svg { max-height: 220px; }
+
+.dash-empty-note { color: var(--ink-faint); font-size: 13px; padding: 40px 6px; text-align: center; }
+.dash-loading-panel { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--ink-soft); font-size: 13px; padding: 30px 0; }
+
+/* chart primitives */
+.dash-bar { cursor: pointer; transition: opacity 0.12s ease; }
+.dash-bar:hover { opacity: 0.82; }
+.dash-axis-label { font-family: var(--mono); font-size: 10.5px; fill: var(--ink-faint); }
+.dash-axis-line { stroke: var(--line); stroke-width: 1; }
+.dash-gridline { stroke: var(--line); stroke-width: 1; opacity: 0.6; }
+.dash-tag-label { font-family: var(--sans); font-size: 12px; fill: var(--ink); font-weight: 500; }
+.dash-tag-count { font-family: var(--mono); font-size: 11px; fill: var(--ink-soft); }
+
+/* ---------- shared: labeled-bar rows, used by composition, tag
+   breakdown, gap breakdown, and the leaderboard — one consistent
+   grid so every "label — bar — number" row in the dashboard lines up
+   the same way ---------- */
+.dash-row-list { display: flex; flex-direction: column; gap: 12px; }
+.dash-row {
+  display: grid; grid-template-columns: 118px 1fr 44px; align-items: center; gap: 12px;
+}
+.dash-row-label { font-size: 12.5px; color: var(--ink-soft); display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-row-track { background: var(--panel-sunken); border-radius: 6px; height: 10px; overflow: hidden; }
+.dash-row-fill { height: 100%; border-radius: 6px; background: var(--accent); }
+.dash-row-count { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); text-align: right; }
+
+.dash-composition-total { display: flex; height: 18px; border-radius: 6px; overflow: hidden; margin-bottom: 20px; background: var(--line); }
+.dash-composition-total span { display: block; height: 100%; }
+.dash-composition-total .seg-added { background: var(--added); }
+.dash-composition-total .seg-removed { background: var(--removed); }
+.dash-composition-total .seg-changed { background: var(--changed); }
+.dash-composition-readout { margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }
+
+.dash-gap-breakdown { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line); }
+.dash-gap-breakdown-label { margin: 0 0 14px; }
+
+/* ---------- leaderboard ---------- */
+.dash-leaderboard { display: flex; flex-direction: column; gap: 12px; }
+.dash-lb-row {
+  display: grid; grid-template-columns: 30px 1fr auto auto; align-items: center; gap: 16px;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel);
+  cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease;
+}
+.dash-lb-row:hover { border-color: var(--accent); background: var(--card); }
+.dash-lb-rank { font-family: var(--serif); font-style: italic; font-weight: 600; color: var(--ink-faint); font-size: 16px; }
+.dash-lb-dates { font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-lb-bar { display: flex; height: 8px; width: 140px; border-radius: 4px; overflow: hidden; background: var(--line); flex-shrink: 0; }
+.dash-lb-bar span { display: block; height: 100%; }
+.dash-lb-bar .seg-added { background: var(--added); }
+.dash-lb-bar .seg-removed { background: var(--removed); }
+.dash-lb-bar .seg-changed { background: var(--changed); }
+.dash-lb-total { font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft); white-space: nowrap; }
+
+/* ---------- tooltip ---------- */
+.dash-tooltip {
+  position: fixed; z-index: 130; pointer-events: none;
+  background: var(--ink); color: var(--accent-ink);
+  border-radius: var(--radius-sm); padding: 11px 14px;
+  font-size: 12px; line-height: 1.55; box-shadow: var(--shadow-lifted);
+  max-width: 250px;
+}
+.dash-tooltip[hidden] { display: none; }
+.dash-tooltip-title { font-weight: 700; margin-bottom: 5px; }
+.dash-tooltip-row { display: flex; align-items: center; gap: 7px; }
+.dash-tooltip-row .dot { width: 6px; height: 6px; }
+.dash-tooltip-skip { margin-top: 7px; padding-top: 7px; border-top: 1px solid rgba(255,255,255,0.18); opacity: 0.75; font-size: 11px; line-height: 1.45; }
+
+@media (max-width: 980px) {
+  .dash-kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .dash-grid-2 { grid-template-columns: 1fr; }
+  .dash-modal { padding: 10px; }
+  .dash-modal-panel { height: 96vh; }
+  .dash-lb-row { grid-template-columns: 24px 1fr; grid-template-rows: auto auto; row-gap: 10px; }
+  .dash-lb-bar { width: 100%; }
+  .dash-row { grid-template-columns: 90px 1fr 40px; }
+}
