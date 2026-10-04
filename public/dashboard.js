@@ -4,12 +4,19 @@
 // view already produces, aggregated across the whole recorded history
 // instead of one pair of snapshots at a time.
 //
-// It leans entirely on the existing /api/diff endpoint rather than adding
-// a new server route: for a chosen level of detail, it walks the site's
-// snapshot list in consecutive pairs — or, for a long history, a subset
-// of it sampled evenly across CALENDAR TIME rather than by position in
-// the list (see computePairs) — and asks for the same diff the compare
-// view would show, keeping only the counts and tag breakdown.
+// It reads the record rather than fetching it. public/archiveStore.js owns
+// the one walk of a site's history — every adjacent pair of captures, the
+// pages themselves, and what changed at each step — and this file asks for
+// that reading and then does nothing but draw it. The timelapse asks for the
+// same reading. Whoever opens first pays for it, the other one opens on
+// whatever is already stored, and an interrupted walk resumes rather than
+// starting over.
+//
+// That used to be twenty-eight sampled comparisons, which was chosen to keep
+// the wait short. It is now every one of them, because a chart of a site's
+// history that skips most of its history is a chart of something else, and
+// because the reading is stored: the long wait happens once, and every visit
+// after it is instant.
 //
 // Two things this version deliberately avoids, both because they caused
 // real bugs before:
@@ -20,30 +27,22 @@
 //      the browser owns its layout completely.
 //
 //   2. No per-fetch re-rendering. Every chart is drawn exactly once, only
-//      after the whole analysis batch has returned. Redrawing mid-stream
-//      meant the axis scale and bar count changed underneath the viewer
-//      as data arrived. A single "analyzing" skeleton, swapped once for
-//      the finished chart, is calmer and cheaper.
+//      after the whole reading has come back. Redrawing mid-stream meant
+//      the axis scale and bar count changed underneath the viewer as data
+//      arrived. A single "analyzing" skeleton, swapped once for the
+//      finished chart, is calmer and cheaper.
 //
 // A word on honesty: the Wayback Machine's crawler visits a site on its
 // own schedule, not the site's. A gap in coverage means the crawler
 // didn't stop by — it says nothing about whether the site changed in
-// between. A large diff between two analyzed snapshots is "the difference
-// between these two captures," never "what happened on this date." When a
-// detail level's sampling skips real archived snapshots in between two
-// analyzed ones, that surfaces on hover — it does not get a permanent
-// visual marker, because at typical sampling levels most bars skip
-// something, and a marker on almost everything stops being information.
+// between. A large diff between two captures is "the difference between
+// these two captures," never "what happened on this date." And because
+// every adjacent pair is now analyzed, no bar spans a snapshot that was
+// skipped, which is a thing this chart used to have to warn about.
 //
 // This file expects app.js to have already run: it reuses the global
 // `state`, `el`, `formatDate`, `escapeHtml`, `positionHandles`, and
 // `loadDiff` from that file rather than duplicating them.
-
-// How many snapshots the analysis samples across the record. Balanced is the
-// only setting now that the resolution switch is gone: it lands roughly one
-// bar per year of a long history, which is enough to see the shape of a site
-// without asking the Archive for sixty diffs.
-const SAMPLE_POINTS = 28;
 
 // Bars are filled with the CSS custom properties themselves — flat, one ink
 // per series, no gradients. Colour in this dashboard means added, removed or
@@ -107,68 +106,31 @@ function tagLabel(tag) { return TAG_LABELS[tag] || (tag ? tag.toUpperCase() : 'O
 const DASH = {
   gen: 0,
   forUrl: null,
-  sig: null,                    // the record the intervals below belong to
-  running: false,               // true while a queue is in flight for DASH.sig
-  intervals: [],                // sparse array, filled positionally as fetches resolve
+  running: false,               // true while a record is being read
+  intervals: [],                // one entry per adjacent pair, in order
   completed: 0,
   totalPairs: 0,
-  sampled: false,
   rangeLo: null,
   rangeHi: null,
 };
 
-// Reading a long history costs one /api/diff per sampled pair, and the answer
-// for a given record never changes. So it is kept. Reopening the dashboard, or
-// coming back to a site you already looked at, redraws from here instead of
-// asking the Archive for the same thirty diffs over again.
-//
-// Keyed on the record itself — url, snapshot count and the two end timestamps —
-// so a re-trace that returns a different list is analyzed afresh, and nothing
-// else ever is.
-const ANALYSIS_CACHE_MAX = 6;
-const analysisCache = new Map();
-
-function analysisSignature() {
-  const s = state.snapshots;
-  return `${state.url}|${s.length}|${s[0].timestamp}|${s[s.length - 1].timestamp}`;
+// The masthead's one line of prose, and the caption over the chart. The scope
+// is the same either way — every capture on file, every adjacent pair between
+// them — so only the tense changes, and it changes when the reading lands
+// rather than when the modal opens.
+function describeAnalysis(done) {
+  const n = state.snapshots.length;
+  el('dashSubtitle').textContent = done
+    ? `${fmt(n)} snapshots on file \u00b7 all ${fmt(n - 1)} steps between them analyzed`
+    : `${fmt(n)} snapshots on file \u00b7 reading all ${fmt(n - 1)} steps between them`;
+  el('dashActivityHint').textContent = 'Click any bar to open that comparison';
 }
 
-function cacheAnalysis(sig) {
-  analysisCache.delete(sig);             // re-insert: Map iteration is oldest-first
-  analysisCache.set(sig, {
-    intervals: DASH.intervals,
-    totalPairs: DASH.totalPairs,
-    sampled: DASH.sampled,
-  });
-  while (analysisCache.size > ANALYSIS_CACHE_MAX) {
-    analysisCache.delete(analysisCache.keys().next().value);
-  }
-}
-
-function restoreAnalysis(entry) {
-  DASH.intervals = entry.intervals;
-  DASH.totalPairs = entry.totalPairs;
-  DASH.sampled = entry.sampled;
-  DASH.completed = entry.totalPairs;
-}
-
-// The masthead's one line of prose, and the caption over the chart. Both depend
-// only on what was analyzed, so both are re-stated whenever we redraw —
-// whether that reading came off the wire or out of the cache.
-function describeAnalysis() {
-  el('dashSubtitle').textContent = DASH.sampled
-    ? `${state.snapshots.length} snapshots on file \u00b7 analyzing ${DASH.totalPairs + 1} of them across the full span`
-    : `${state.snapshots.length} snapshots on file \u00b7 analyzing every one of them`;
-  el('dashActivityHint').textContent = DASH.sampled
-    ? 'Click a bar to open it \u00b7 hover for skipped snapshots'
-    : 'Click any bar to open that comparison';
-}
-
-// The dashboard presents one fixed reading of the record: consecutive
-// snapshots, sampled evenly across calendar time, all three series drawn.
-// There is no resolution switch, no grouping switch and no series filter —
-// what is on screen is the whole picture, and the only thing you can change is
-// which stretch of it you are looking at.
+// The dashboard presents one fixed reading of the record: every adjacent pair
+// of captures, all three series drawn. There is no resolution switch, no
+// grouping switch and no series filter — what is on screen is the whole
+// picture, and the only thing you can change is which stretch of it you are
+// looking at.
 
 // ---------------------------------------------------------------- open/close
 el('openDashboardBtn').addEventListener('click', openDashboard);
@@ -194,28 +156,16 @@ function openDashboard() {
 
   renderCadence();     // needs only state.snapshots — instant, no fetch required
 
-  const sig = analysisSignature();
-  const cached = analysisCache.get(sig);
-  if (cached) {
-    // This exact record has already been read. Redraw it; fetch nothing — but
-    // first abandon any run still in flight for a different record, or it will
-    // land in this dashboard when it finishes.
-    DASH.gen++;
+  // If this record was read a moment ago in this same tab, it is still in
+  // memory. Draw it straight away rather than flashing the loading skeletons
+  // over a dashboard that is one IndexedDB read away from being complete.
+  const inMemory = arCached(state.url, state.snapshots);
+  if (inMemory) {
+    DASH.gen++;                 // abandon anything still in flight
     DASH.running = false;
-    DASH.sig = sig;
-    restoreAnalysis(cached);
-    describeAnalysis();
+    applyRecord(inMemory);
+    describeAnalysis(true);
     renderAll();
-    return;
-  }
-
-  if (DASH.sig === sig && DASH.running) {
-    // A run for this record is already in flight. Reopening must not start a
-    // second one — show where the first has got to and let it finish itself.
-    describeAnalysis();
-    renderKpiSkeleton();
-    renderLoadingSkeletons();
-    updateLoadingProgressText();
     return;
   }
 
@@ -285,133 +235,63 @@ function setupFocusControls() {
   el('dashRangeTo').value = DASH.rangeHi;
 }
 
-// ---------------------------------------------------------------- fetching
-// Rather than sampling every Nth snapshot BY POSITION — which, on an
-// archive where capture density is wildly uneven, means almost the whole
-// sampling budget lands in whichever era got crawled most often — this
-// spaces target points evenly across CALENDAR TIME and snaps each one to
-// the nearest snapshot that actually exists. A sparse decade and a dense
-// month each get a share of the detail proportional to how much time they
-// cover, not how many times a crawler happened to stop by.
-function nearestSnapshotIndex(targetT) {
+// ---------------------------------------------------------------- reading the record
+// Shaping the stored reading into the rows everything here draws from. One row
+// per adjacent pair, in order, and nothing derived from a guess: the dates are
+// the captures' own, and the counts are the ones the walk measured.
+function applyRecord(record) {
   const snaps = state.snapshots;
-  let lo = 0, hi = snaps.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (new Date(snaps[mid].date).getTime() < targetT) lo = mid + 1; else hi = mid;
-  }
-  if (lo > 0) {
-    const dLo = Math.abs(new Date(snaps[lo].date).getTime() - targetT);
-    const dPrev = Math.abs(new Date(snaps[lo - 1].date).getTime() - targetT);
-    if (dPrev < dLo) return lo - 1;
-  }
-  return lo;
-}
+  const pairs = Math.max(0, snaps.length - 1);
+  const intervals = new Array(pairs);
 
-function computePairs() {
-  const n = state.snapshots.length;
-  const maxPoints = SAMPLE_POINTS;
-
-  let indices;
-  if (n - 1 <= maxPoints) {
-    indices = Array.from({ length: n }, (_, i) => i);
-  } else {
-    const minT = new Date(state.snapshots[0].date).getTime();
-    const maxT = new Date(state.snapshots[n - 1].date).getTime();
-    const span = Math.max(1, maxT - minT);
-    const set = new Set([0, n - 1]);
-    for (let k = 1; k < maxPoints; k++) {
-      set.add(nearestSnapshotIndex(minT + (span * k) / maxPoints));
-    }
-    indices = Array.from(set).sort((a, b) => a - b);
+  for (let i = 0; i < pairs; i++) {
+    const counts = record.counts[i + 1];
+    const base = {
+      fromIdx: i, toIdx: i + 1,
+      fromDate: snaps[i].date, toDate: snaps[i + 1].date,
+      added: 0, removed: 0, changed: 0, total: 0, tagCounts: {},
+    };
+    // A step the Archive never produced is drawn as a hole rather than as
+    // "nothing changed", which would be a different and much bigger lie.
+    intervals[i] = counts
+      ? { ...base, ...counts, total: record.totals[i + 1] || 0, tagCounts: record.tags[i + 1] || {} }
+      : { ...base, unavailable: true };
   }
 
-  const pairs = [];
-  for (let i = 0; i < indices.length - 1; i++) pairs.push([indices[i], indices[i + 1]]);
-  return pairs;
-}
-
-async function fetchIntervalDiff(fromIdx, toIdx) {
-  const from = state.snapshots[fromIdx];
-  const to = state.snapshots[toIdx];
-  const res = await fetch(`/api/diff?url=${encodeURIComponent(state.url)}&from=${from.timestamp}&to=${to.timestamp}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Could not build that comparison.');
-
-  const tagCounts = {};
-  (data.changes || []).forEach((c) => { tagCounts[c.tag] = (tagCounts[c.tag] || 0) + 1; });
-
-  return {
-    fromIdx, toIdx,
-    fromDate: from.date, toDate: to.date,
-    skipped: Math.max(0, toIdx - fromIdx - 1),
-    added: data.counts.added, removed: data.counts.removed, changed: data.counts.changed,
-    total: data.counts.added + data.counts.removed + data.counts.changed,
-    tagCounts,
-  };
-}
-
-async function runQueue(pairs, limit, myGen) {
-  let cursor = 0;
-
-  async function worker() {
-    while (cursor < pairs.length) {
-      if (DASH.gen !== myGen) return;
-      const idx = cursor++;
-      const [fromIdx, toIdx] = pairs[idx];
-      try {
-        const result = await fetchIntervalDiff(fromIdx, toIdx);
-        if (DASH.gen !== myGen) return;
-        DASH.intervals[idx] = result;
-      } catch (_) {
-        if (DASH.gen !== myGen) return;
-        DASH.intervals[idx] = {
-          fromIdx, toIdx,
-          fromDate: state.snapshots[fromIdx].date, toDate: state.snapshots[toIdx].date,
-          skipped: Math.max(0, toIdx - fromIdx - 1),
-          added: 0, removed: 0, changed: 0, total: 0, tagCounts: {}, error: true,
-        };
-      }
-      if (DASH.gen !== myGen) return;
-      DASH.completed++;
-      updateLoadingProgressText();
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(limit, pairs.length) }, worker));
+  DASH.intervals = intervals;
+  DASH.totalPairs = pairs;
+  DASH.completed = pairs;
 }
 
 async function startAnalysis() {
   DASH.gen++;
   const myGen = DASH.gen;
-  const pairs = computePairs();
-  const sig = analysisSignature();
+  const url = state.url;
+  const snaps = state.snapshots;
 
-  DASH.sig = sig;
   DASH.running = true;
-  DASH.intervals = new Array(pairs.length);
+  DASH.intervals = [];
   DASH.completed = 0;
-  DASH.totalPairs = pairs.length;
-  DASH.sampled = pairs.length < state.snapshots.length - 1;
+  DASH.totalPairs = Math.max(0, snaps.length - 1);
 
-  describeAnalysis();
+  describeAnalysis(false);
   renderKpiSkeleton();
   renderLoadingSkeletons();
 
-  if (pairs.length === 0) {
-    DASH.running = false;
-    cacheAnalysis(sig);
-    renderAll();
-    return;
-  }
-
-  await runQueue(pairs, 4, myGen);
-  if (DASH.gen !== myGen) return; // superseded by a newer analysis
+  // The store reads this record if it is not stored, waits on the walk already
+  // running if there is one, and returns what it has in a few milliseconds if
+  // it is. Opening the dashboard before the timelapse therefore leaves the
+  // timelapse nothing to do, and the two never walk the same history twice.
+  const record = await arEnsure(url, snaps, (p) => {
+    if (DASH.gen !== myGen) return;
+    DASH.completed = p.done;
+    updateLoadingProgressText();
+  });
+  if (DASH.gen !== myGen) return;   // superseded by a newer reading
   DASH.running = false;
 
-  // A failed pair is left uncached on purpose: a flaky minute should be
-  // retryable by reopening, not frozen into the dashboard forever.
-  if (!DASH.intervals.some((iv) => iv && iv.error)) cacheAnalysis(sig);
+  applyRecord(record);
+  describeAnalysis(true);
   renderAll();
 }
 
@@ -566,8 +446,7 @@ function renderKpis() {
       ? kpiCard('Largest difference', fmt(busy.total), '', {
           accent: true, id: 'dashBusiestKpi', onClick: true,
           subHtml: `${escapeHtml(monthYear(busy.fromDate))} \u2192 ${escapeHtml(monthYear(busy.toDate))}`,
-          title: (busy.skipped > 0 ? `Spans ${busy.skipped} unanalyzed snapshot${busy.skipped === 1 ? '' : 's'}. ` : '') +
-            'Click to open this comparison',
+          title: 'Click to open this comparison',
         })
       : kpiCard('Largest difference', '0', '', { subHtml: '' }),
   ].join('');
@@ -602,8 +481,17 @@ function renderActivityChart(intervals) {
   const plotW = W - ML - MR, plotH = H - MT - MB;
   const n = intervals.length;
   const band = plotW / n;
-  // Caps the width so a coarse reading does not become four fat slabs.
-  const barW = Math.max(3, Math.min(band * 0.6, 30));
+  // A three-pixel floor assumes the bars have room to themselves. Seven hundred
+  // of them do not: at that density a floor makes every bar overlap the next,
+  // and the chart turns into one solid block instead of showing how a site
+  // changed over time. Past the point where a bar is thinner than a hairline
+  // this is a density plot, which is the honest way to draw that many
+  // measurements in that little space.
+  const barW = Math.max(0.75, Math.min(band * 0.66, 30));
+  // The per-bar wash is a hover highlight across the whole column. Below a few
+  // pixels a column it is invisible anyway, so it is left out rather than
+  // adding another seven hundred rectangles to a chart that already has them.
+  const wash = band >= 4;
 
   const peak = Math.max(1, ...intervals.map(seriesTotal));
   const { step, top: axisTop } = niceScale(peak, 4);
@@ -639,14 +527,14 @@ function renderActivityChart(intervals) {
       const shape = isTop
         ? topRoundedRect(x, segTop, barW, segH, Math.min(2, barW / 2))
         : `<rect x="${x}" y="${segTop}" width="${barW}" height="${segH}" rx="1" />`;
-      segs += `<g fill="var(--${s.key})" class="dash-bar-seg">${shape}</g>`;
+      segs += `<g fill="var(--${s.key})">${shape}</g>`;
       bottom -= h;
     });
 
     bars += `<g class="dash-bar" data-i="${i}">
-        <rect class="dash-bar-wash" x="${ML + i * band}" y="${MT}" width="${band}" height="${plotH}" />
+        ${wash ? `<rect class="dash-bar-wash" x="${ML + i * band}" y="${MT}" width="${band}" height="${plotH}" />` : ''}
         ${segs}
-        <rect class="dash-bar-hit" x="${ML + i * band}" y="${MT}" width="${band}" height="${plotH}" fill="transparent" />
+        <rect x="${ML + i * band}" y="${MT}" width="${band}" height="${plotH}" fill="transparent" />
       </g>`;
   });
 
@@ -699,16 +587,14 @@ function showDashTooltip(e, iv) {
   const tip = el('dashTooltip');
   const label = iv.label ? iv.label : `${formatDate(iv.fromDate)} \u2192 ${formatDate(iv.toDate)}`;
   const total = iv.added + iv.removed + iv.changed;
-  const skipNote = iv.skipped > 0
-    ? `<div class="dash-tooltip-skip">${fmt(iv.skipped)} archived snapshot${iv.skipped === 1 ? '' : 's'} in between were not analyzed</div>`
-    : '';
   tip.innerHTML = `
     <div class="dash-tooltip-title">${escapeHtml(label)}</div>
-    <div class="dash-tooltip-row"><i class="dot dot-added"></i>added<b>${fmt(iv.added)}</b></div>
-    <div class="dash-tooltip-row"><i class="dot dot-removed"></i>removed<b>${fmt(iv.removed)}</b></div>
-    <div class="dash-tooltip-row"><i class="dot dot-changed"></i>changed<b>${fmt(iv.changed)}</b></div>
-    <div class="dash-tooltip-row dash-tooltip-row-total">in total<b>${fmt(total)}</b></div>
-    ${skipNote}
+    ${iv.unavailable
+      ? '<div class="dash-tooltip-note">This capture could not be retrieved from the Archive, so nothing is known about what changed here.</div>'
+      : `<div class="dash-tooltip-row"><i class="dot dot-added"></i>added<b>${fmt(iv.added)}</b></div>
+         <div class="dash-tooltip-row"><i class="dot dot-removed"></i>removed<b>${fmt(iv.removed)}</b></div>
+         <div class="dash-tooltip-row"><i class="dot dot-changed"></i>changed<b>${fmt(iv.changed)}</b></div>
+         <div class="dash-tooltip-row dash-tooltip-row-total">in total<b>${fmt(total)}</b></div>`}
   `;
   tip.hidden = false;
   moveDashTooltip(e);
@@ -844,8 +730,8 @@ function renderCadence() {
     });
     bars += `<g class="dash-bar" data-i="${i}">
       <rect class="dash-bar-wash" x="${ML + i * band}" y="${MT}" width="${band}" height="${plotH}" />
-      ${c ? `<g fill="var(--coverage)" class="dash-bar-seg">${topRoundedRect(x, y, barW, h, Math.min(2, barW / 2))}</g>` : ''}
-      <rect class="dash-bar-hit" x="${ML + i * band}" y="${MT}" width="${band}" height="${plotH}" fill="transparent" />
+      ${c ? `<g fill="var(--coverage)">${topRoundedRect(x, y, barW, h, Math.min(2, barW / 2))}</g>` : ''}
+      <rect x="${ML + i * band}" y="${MT}" width="${band}" height="${plotH}" fill="transparent" />
     </g>`;
   });
 
@@ -926,10 +812,7 @@ function renderLeaderboard(intervals) {
 
   wrap.innerHTML = top.map((iv, i) => {
     const label = iv.label ? iv.label : `${formatDate(iv.fromDate)} \u2192 ${formatDate(iv.toDate)}`;
-    const title = iv.skipped > 0
-      ? ` title="Spans ${fmt(iv.skipped)} unanalyzed snapshot${iv.skipped === 1 ? '' : 's'}"`
-      : '';
-    return `<div class="dash-lb-row" data-i="${i}"${title}>
+    return `<div class="dash-lb-row" data-i="${i}">
       <span class="dash-lb-rank">${i + 1}</span>
       <span class="dash-lb-dates">${escapeHtml(label)}</span>
       <span class="dash-lb-bar">

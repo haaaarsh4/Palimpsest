@@ -63,6 +63,21 @@ async function initSchema() {
     )
   `);
 
+  // Cached claim reports: one row per traced address. The payload is the whole
+  // dossier (threads, events, scores, charts), and the version is what makes an
+  // old row safe to ignore when the analysis rules change — the report is
+  // rebuilt from the same cached captures at no Archive cost, so the only
+  // thing a version bump costs is one pass over rows we already have.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS claim_reports (
+      url TEXT PRIMARY KEY,
+      version INTEGER NOT NULL,
+      captures INTEGER NOT NULL,
+      generated_at INTEGER NOT NULL,
+      payload TEXT NOT NULL
+    )
+  `);
+
   // The notes log: many rows per (user, url), an append-only journal.
   await db.execute(`
     CREATE TABLE IF NOT EXISTS notes_by_url (

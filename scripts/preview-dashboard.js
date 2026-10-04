@@ -4,10 +4,15 @@
 // are painful to eyeball against live data: the trace-page legend and the
 // whole "Site dashboard" modal. Reaching either one for real means a slow
 // Wayback round trip, so this builds a single self-contained HTML file that
-// inlines the REAL styles.css, the REAL dashboard.js and the REAL markup out
-// of index.html, then feeds dashboard.js a synthetic-but-plausible archive
-// (737 captures over 27 years, uneven crawler density, a couple of spikes)
-// through a mock /api/diff.
+// inlines the REAL styles.css, the REAL archiveStore.js, the REAL
+// dashboard.js and the REAL markup out of index.html, then feeds them a
+// synthetic-but-plausible archive (737 captures over 27 years, uneven crawler
+// density, a couple of spikes) through a mock /api/record-step.
+//
+// The store is inlined too, because the dashboard no longer fetches anything
+// itself: it asks archiveStore.js to read the record, and that is what walks
+// the archive and fills in the charts. A harness that stubbed only the
+// dashboard would show a page that never finishes reading anything.
 //
 // Because nothing here is re-implemented, what you see is what the shipped
 // page renders — the only stub is the handful of globals dashboard.js borrows
@@ -25,6 +30,7 @@ const ROOT = path.join(__dirname, '..');
 const OUT_DIR = path.join(ROOT, '.freebuff', 'preview');
 
 const css = fs.readFileSync(path.join(ROOT, 'public', 'styles.css'), 'utf8');
+const archiveStoreJs = fs.readFileSync(path.join(ROOT, 'public', 'archiveStore.js'), 'utf8');
 const dashboardJs = fs.readFileSync(path.join(ROOT, 'public', 'dashboard.js'), 'utf8');
 let html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
 
@@ -169,6 +175,11 @@ function positionHandles() {
 
 function loadDiff() {}
 
+// Every step has to carry a page as well as its numbers, or the store treats
+// the step as a failure and the reading never completes.
+const PLACEHOLDER = (i) =>
+  '<!DOCTYPE html><html><head></head><body><p>placeholder capture ' + i + '</p></body></html>';
+
 window.__fetches = [];
 window.fetch = async (url) => {
   window.__fetches.push(String(url).split('?')[1] || '');
@@ -178,11 +189,20 @@ window.fetch = async (url) => {
   const fromIdx = PREVIEW_SNAPSHOTS.findIndex((s) => s.timestamp === fromTs);
   const toIdx = PREVIEW_SNAPSHOTS.findIndex((s) => s.timestamp === toTs);
   const { counts, tagCounts } = mockCounts(fromIdx, toIdx);
-  const changes = Object.entries(tagCounts).flatMap(([tag, c]) =>
-    Array.from({ length: c }, () => ({ tag }))
-  );
   await new Promise((r) => setTimeout(r, 12));
-  return { ok: true, json: async () => ({ counts, changes }) };
+  // The record walk wants a page on every step, not just numbers, because it is
+  // storing the whole record for the timelapse to play later. This harness only
+  // ever draws the dashboard, so the pages are placeholders — but they have to
+  // be present and non-empty or the walk treats the step as a failure.
+  return {
+    ok: true,
+    json: async () => ({
+      counts,
+      tagCounts,
+      newHtml: PLACEHOLDER(toIdx),
+      oldHtml: params.get('withOld') === '1' ? PLACEHOLDER(fromIdx) : undefined,
+    }),
+  };
 };
 `;
 
@@ -194,7 +214,12 @@ html = html.replace(
 );
 html = html.replace(/<link rel="stylesheet" href="\/styles\.css" \/>/, () => `<style>\n${css}\n</style>`);
 html = html.replace(/\s*<script src="\/app\.js"><\/script>/, '');
-html = html.replace(/\s*<script src="\/dashboard\.js"><\/script>/, '');
+// Every real script has to go, not just the two this harness inlines —
+// index.html also loads archiveStore.js and timelapse.js, and leaving those
+// tags in sends the preview server off for files that were never written.
+['app.js', 'archiveStore.js', 'dashboard.js', 'timelapse.js'].forEach((f) => {
+  html = html.replace(new RegExp(`\\s*<script src="\\/${f.replace('.', '\\.')}"><\\/script>`), '');
+});
 
 // The trace page and workspace are hidden until a live trace finishes; the
 // harness has data already, so show them.
@@ -248,7 +273,9 @@ const BOOTSTRAP = `
 </script>
 `;
 
-html = html.replace('</body>', `${TOGGLE}<script>${STUB}</script>\n<script>${dashboardJs}</script>\n${BOOTSTRAP}</body>`);
+html = html.replace('</body>',
+  `${TOGGLE}<script>${STUB}</script>\n<script>${archiveStoreJs}</script>\n` +
+  `<script>${dashboardJs}</script>\n${BOOTSTRAP}</body>`);
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
 const file = path.join(OUT_DIR, `dash-${Date.now()}.html`);

@@ -27,7 +27,7 @@
   <section class="hero">
     <div class="hero-inner">
       <span class="hero-eyebrow">Powered by the Wayback Machine</span>
-      <h1>See what a website<br />used to say.</h1>
+      <h1>See what a website <br />used to say.</h1>
       <p class="hero-sub">Enter any address. Palimpsest pulls its history from the Wayback Machine, lines up two moments in time side by side, and shows you exactly what moved, what vanished, and what showed up.</p>
 
       <form id="urlForm" class="url-form" autocomplete="off">
@@ -50,6 +50,20 @@
       </div>
 
       <p id="urlError" class="error-text" hidden></p>
+
+      <!-- The other way of reading the same archive, at the foot of the card.
+           Flanked by two hairlines so it reads as a divider with a door in it,
+           quieter than the button above. -->
+      <div class="hero-alt">
+        <span class="hero-alt-line" aria-hidden="true"></span>
+        <a id="claimsCta" class="hero-alt-link" href="/claims.html">
+          Claim records
+          <svg class="hero-alt-arrow" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M5 12h12.5M12.5 7l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </a>
+        <span class="hero-alt-line" aria-hidden="true"></span>
+      </div>
     </div>
   </section>
 
@@ -60,14 +74,13 @@
         <p id="timelineMeta" class="muted"></p>
       </div>
       <div class="timeline-header-actions">
-        <div class="legend" role="group" aria-label="Colour key for the comparison below">
-          <span class="legend-item"><i class="dot dot-added"></i>added</span>
-          <span class="legend-item"><i class="dot dot-removed"></i>removed</span>
-          <span class="legend-item"><i class="dot dot-changed"></i>changed</span>
-        </div>
         <button id="openDashboardBtn" class="secondary-btn dash-open-btn" type="button">
           <svg viewBox="0 0 24 24" fill="none"><path d="M4 20V10M11 20V4M18 20v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Site dashboard
+        </button>
+        <button id="openTimelapseBtn" class="secondary-btn dash-open-btn" type="button">
+          <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7.5v4.8l3.1 1.9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Timelapse
         </button>
       </div>
     </div>
@@ -90,12 +103,12 @@
       <div class="selection-dates">
         <div class="selection-date">
           <span class="selection-label">From</span>
-          <span id="fromDate" class="mono selection-value">&mdash;</span>
+          <span id="fromDate" class="mono selection-value">&nbsp;</span>
         </div>
         <div class="selection-arrow">&rarr;</div>
         <div class="selection-date">
           <span class="selection-label">To</span>
-          <span id="toDate" class="mono selection-value">&mdash;</span>
+          <span id="toDate" class="mono selection-value">&nbsp;</span>
         </div>
       </div>
       <button id="compareBtn" class="primary-btn" disabled>Compare snapshots</button>
@@ -367,7 +380,160 @@
 
   <div id="dashTooltip" class="dash-tooltip" hidden></div>
 
+  <!-- The timelapse: the same record played back as a film. Two stacked
+       iframes so one frame can dissolve into the next instead of blinking. -->
+  <div id="timelapseModal" class="tl-modal" hidden>
+    <div id="timelapseBackdrop" class="tl-modal-backdrop"></div>
+    <div class="tl-panel">
+      <div class="tl-header">
+        <div class="tl-heading">
+          <h3 id="tlSiteName" class="tl-title">&nbsp;</h3>
+          <p id="tlSubtitle" class="muted small"></p>
+        </div>
+        <div class="tl-header-actions">
+          <!-- The film can be kept. It sits beside the close button because it
+               is the other thing you can do to the film as a whole. -->
+          <button id="tlDownloadBtn" class="tl-icon-btn tl-head-btn" type="button"
+                  title="Download the film as a video" aria-label="Download the film as a video">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0 4-4m-4 4-4-4M5 17.5V19a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-1.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button id="tlModalClose" class="pane-modal-close" type="button" title="Close">&times;</button>
+        </div>
+      </div>
+
+      <div class="tl-body">
+        <!-- The stage is a browser window, because that is what an archived
+             page is: one address, frozen at one moment. -->
+        <div class="tl-stage">
+          <div class="tl-chrome">
+            <span class="tl-lights"><i></i><i></i><i></i></span>
+            <span class="tl-addr mono" id="tlAddress"></span>
+          </div>
+          <div class="tl-viewport" id="tlViewport">
+            <iframe id="tlFrameA" class="tl-frame" sandbox="allow-same-origin" title="Archived snapshot"></iframe>
+            <iframe id="tlFrameB" class="tl-frame" sandbox="allow-same-origin" title="Archived snapshot"></iframe>
+
+            <!-- Date is the one thing a timelapse has to state out loud: every
+                 frame is a capture, and without its date the film is just a
+                 page flickering. -->
+            <div class="tl-datecard" id="tlDateCard">
+              <span class="tl-date-eyebrow">Captured</span>
+              <span class="tl-date" id="tlDate">&nbsp;</span>
+              <span class="tl-date-gap" id="tlDateGap"></span>
+            </div>
+
+            <div class="tl-delta" id="tlDelta"></div>
+
+            <!-- Phase one: the whole record is retrieved before the film is
+                 allowed to start. This card is that wait, stated honestly:
+                 what it is doing, how far along, and how long is left. -->
+            <div class="tl-loader" id="tlLoader">
+              <div class="tl-load-card">
+                <span class="tl-load-eyebrow">Filing the record</span>
+                <p class="tl-load-title" id="tlLoaderText">Retrieving capture 0 of 0</p>
+                <div class="tl-load-bar"><div class="tl-load-fill" id="tlLoadFill"></div></div>
+                <p class="tl-load-sub" id="tlLoadSub">&nbsp;</p>
+              </div>
+            </div>
+
+            <!-- Separate from the loader on purpose. The loader means "there
+                 is nothing to show yet" and covers the stage. This means "the
+                 frame you're watching is fine, the next one is still on its
+                 way", which must never blank a page that is already there. -->
+            <div class="tl-buffer" id="tlBuffer" hidden>
+              <span class="tl-buffer-dot"></span>
+              <span id="tlBufferText">fetching the next capture</span>
+            </div>
+
+            <!-- The download, while it is being set up. It is a card over the
+                 stage here; once it starts recording it becomes a row under
+                 the transport instead, because the transport is outside the
+                 frame the recorder is cutting and this is not. -->
+            <div class="tl-export" id="tlExport" hidden>
+              <div class="tl-export-card">
+                <span class="tl-load-eyebrow">Download the film</span>
+                <p class="tl-export-title" id="tlExportTitle">&nbsp;</p>
+                <p class="tl-export-sub" id="tlExportSub"></p>
+                <div class="tl-export-row">
+                  <span class="tl-export-label">Seconds per capture</span>
+                  <div class="tl-speeds" role="group" aria-label="Seconds per capture">
+                    <button type="button" class="tl-speed tl-export-pace" data-pace="0.25">0.25</button>
+                    <button type="button" class="tl-speed tl-export-pace is-active" data-pace="0.5">0.5</button>
+                    <button type="button" class="tl-speed tl-export-pace" data-pace="1">1</button>
+                  </div>
+                  <span class="tl-export-time mono" id="tlExportTime"></span>
+                </div>
+                <div class="tl-export-actions">
+                  <button id="tlExportStart" class="tl-btn-primary" type="button">Start recording</button>
+                  <button id="tlExportCancel" class="tl-btn-ghost" type="button">Not now</button>
+                </div>
+                <p class="tl-export-note" id="tlExportNote"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Transport. The rail is the timeline again, at film scale: one tick
+             per frame, tall enough to show how much changed at that capture. -->
+        <div class="tl-transport">
+          <div class="tl-rail-wrap" id="tlRailWrap">
+            <div class="tl-rail" id="tlRail">
+              <div class="tl-rail-line"></div>
+              <div class="tl-rail-fill" id="tlRailFill"></div>
+              <div class="tl-rail-ticks" id="tlRailTicks"></div>
+              <div class="tl-rail-head" id="tlRailHead"></div>
+            </div>
+            <div class="tl-rail-ends">
+              <span id="tlFirstDate" class="muted mono"></span>
+              <span id="tlLastDate" class="muted mono"></span>
+            </div>
+          </div>
+
+          <!-- The runway, stated. The frames just ahead of the playhead are
+               loaded before Play unlocks, so the film starts full rather than
+               stalling on its first transition. It disappears when they are. -->
+          <div class="tl-prepare" id="tlPrepare" hidden>
+            <span class="tl-prepare-label" id="tlPrepareLabel"></span>
+            <div class="tl-prepare-bar"><div class="tl-prepare-fill" id="tlPrepareFill"></div></div>
+          </div>
+
+          <div class="tl-controls" id="tlControls">
+            <button id="tlRestart" class="tl-icon-btn" type="button" title="Back to the first capture">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 1 1 2.6 5.9M4 12V6M4 12h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button id="tlPlay" class="tl-play" type="button" title="Play" aria-label="Play the timelapse">
+              <svg class="tl-icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+              <svg class="tl-icon-pause" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5h3.2v14H8zM12.8 5H16v14h-3.2z"/></svg>
+            </button>
+            <span class="tl-counter mono" id="tlCounter">0 / 0</span>
+            <div class="tl-speeds" role="group" aria-label="Playback speed">
+              <button type="button" class="tl-speed" data-speed="0.5">0.5&times;</button>
+              <button type="button" class="tl-speed is-active" data-speed="1">1&times;</button>
+              <button type="button" class="tl-speed" data-speed="2">2&times;</button>
+              <button type="button" class="tl-speed" data-speed="4">4&times;</button>
+              <button type="button" class="tl-speed" data-speed="8">8&times;</button>
+              <button type="button" class="tl-speed" data-speed="16">16&times;</button>
+            </div>
+          </div>
+
+          <!-- What the download becomes while it runs: a row under the stage,
+               outside the crop the recorder is cutting, so the file holds the
+               film and not the film plus its own progress bar. -->
+          <div class="tl-recording" id="tlRecording" hidden>
+            <span class="tl-rec-dot" id="tlRecDot"></span>
+            <span class="tl-rec-label" id="tlRecLabel"></span>
+            <span class="tl-rec-time mono" id="tlRecTime"></span>
+            <button id="tlRecAction" class="tl-btn-ghost" type="button">Stop &amp; save</button>
+            <button id="tlRecDone" class="tl-btn-ghost" type="button" hidden>Back to the film</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="/app.js"></script>
+  <script src="/archiveStore.js"></script>
   <script src="/dashboard.js"></script>
+  <script src="/timelapse.js"></script>
 </body>
 </html>

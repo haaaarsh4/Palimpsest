@@ -31,6 +31,18 @@ document.querySelectorAll('.chip').forEach((chip) => {
   });
 });
 
+// The claim-records button in the top bar carries over whatever address is
+// already typed, so the reader never has to enter the same site twice. The
+// href is kept current while they type, not just on the click, so the link can
+// still be opened in a new tab like any other link.
+const claimsLink = el('claimsCta');
+function syncClaimsLink() {
+  if (!claimsLink) return;
+  const typed = el('urlInput').value.trim();
+  claimsLink.href = typed ? `/claims.html?url=${encodeURIComponent(typed)}` : '/claims.html';
+}
+el('urlInput')?.addEventListener('input', syncClaimsLink);
+
 async function loadSite(raw) {
   setError(null);
   el('timelineSection').hidden = true;

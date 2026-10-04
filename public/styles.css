@@ -1,4 +1,385 @@
 /* ---------------------------------------------------------------------
+   Palimpsest — Timelapse
+   The film is the same record the dashboard charts, played back. It is built
+   from the same parts: a card, a hairline, the paper palette, the three
+   series colours and nothing else. The only new object is the stage — a
+   browser window, because that is honestly what an archived page is — and the
+   only loud thing is the date, which has to be readable over whatever the
+   page underneath happens to be doing. It sits on its own raised card for
+   exactly that reason: white-on-white would vanish.
+========================================================================== */
+
+.tl-modal { position: fixed; inset: 0; z-index: 125; display: flex; align-items: center; justify-content: center; padding: 28px; }
+.tl-modal[hidden] { display: none; }
+.tl-modal-backdrop { position: absolute; inset: 0; background: rgba(23, 20, 14, 0.72); backdrop-filter: blur(6px); }
+
+.tl-panel {
+  position: relative;
+  width: min(96vw, 1500px);
+  height: min(92vh, 980px);
+  background: var(--paper-alt);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lifted);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: dash-fade 0.18s ease-out both;
+}
+
+.tl-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 20px; padding: 20px 32px;
+  background: var(--card); border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.tl-heading { min-width: 0; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.tl-title {
+  font-family: var(--sans); font-weight: 600; font-size: 16px;
+  line-height: 1.3; letter-spacing: -0.005em; margin: 0; color: var(--ink);
+  word-break: break-all;
+}
+.tl-heading .muted { margin: 0; font-size: 12.5px; }
+.tl-header .pane-modal-close { width: 30px; height: 30px; font-size: 20px; flex-shrink: 0; }
+
+/* The body is a column of exactly two things: the stage takes everything it
+   can, the transport takes what it needs. No gap rhythm here — a film wants
+   its frame as large as the window allows. */
+.tl-body {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  padding: 26px 28px 22px;
+  gap: 20px;
+}
+
+/* ---------- stage: a browser window holding one capture ---------- */
+.tl-stage {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-panel);
+}
+
+.tl-chrome {
+  display: flex; align-items: center; gap: 14px;
+  padding: 11px 16px;
+  background: var(--panel-sunken);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+/* Three inert lights, in the paper palette rather than red/amber/green: they
+   are telling you this is a browser window, not offering you controls. */
+.tl-lights { display: flex; gap: 6px; flex-shrink: 0; }
+.tl-lights i { width: 9px; height: 9px; border-radius: 50%; background: var(--line-strong); display: block; }
+.tl-addr {
+  flex: 1; min-width: 0;
+  font-size: 11.5px; color: var(--ink-soft);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 100px;
+  padding: 4px 14px;
+  text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.tl-viewport { position: relative; flex: 1; min-height: 0; background: #fff; }
+
+/* Both frames are always present and always stacked. The one on screen is the
+   only opaque one; the other is written and loaded while invisible, so a
+   change arrives as a dissolve rather than a flash of empty paper. */
+.tl-frame {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 420ms ease;
+  background: #fff;
+}
+.tl-frame.is-front { opacity: 1; }
+
+/* The date is the one thing in the whole film that must never be lost against
+   the page underneath, so it is a raised card with its own background — an
+   archived page can be white, black, or a 2004 gradient, and none of those
+   may decide whether you can read the year. */
+.tl-datecard {
+  position: absolute; left: 22px; bottom: 22px;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 14px 20px 15px;
+  background: rgba(251, 247, 236, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lifted);
+  pointer-events: none;
+  max-width: min(60%, 420px);
+}
+.tl-date-eyebrow {
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--ink-soft);
+}
+.tl-date {
+  font-family: var(--serif);
+  font-weight: 600; font-style: italic;
+  font-size: 34px; line-height: 1.1; letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.tl-date-gap { font-size: 12px; color: var(--ink-soft); }
+
+/* What changed to get to this frame. Same three series colours, same +/−/~
+   marks as the dashboard's figures, so it reads without a key. */
+.tl-delta {
+  position: absolute; right: 22px; bottom: 22px;
+  display: flex; align-items: center; gap: 14px;
+  padding: 11px 16px;
+  background: rgba(251, 247, 236, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line-strong);
+  border-radius: 100px;
+  box-shadow: var(--shadow-panel);
+  pointer-events: none;
+  font-family: var(--mono); font-size: 12px;
+}
+.tl-delta:empty { display: none; }
+.tl-delta-fig b { font-weight: 500; }
+.tl-delta-fig.is-added b { color: var(--added); }
+.tl-delta-fig.is-removed b { color: var(--removed); }
+.tl-delta-fig.is-changed b { color: var(--changed); }
+
+/* ---------- phase one: retrieving the record ----------
+   A long wait is only acceptable if it is legible. This says what is
+   happening, how far along it is, and roughly how much is left, rather than
+   an indeterminate spinner that could be stuck or working for ten minutes with
+   no way to tell the difference. */
+.tl-loader {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: rgba(239, 232, 214, 0.94);
+  backdrop-filter: blur(3px);
+  z-index: 2;
+}
+.tl-loader[hidden] { display: none; }
+
+.tl-load-card {
+  width: min(520px, 100%);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lifted);
+  padding: 28px 30px 24px;
+  text-align: left;
+}
+.tl-load-eyebrow {
+  font-size: 10.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--ink-soft);
+}
+.tl-load-title {
+  font-family: var(--serif);
+  font-weight: 600; font-style: italic;
+  font-size: 27px; line-height: 1.2;
+  color: var(--ink);
+  margin: 8px 0 20px;
+  font-variant-numeric: tabular-nums;
+}
+.tl-load-bar {
+  height: 6px;
+  background: var(--track);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.tl-load-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.tl-load-sub {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The hold indicator. Deliberately small and centred at the bottom: the stage
+   behind it is a real page being watched, so this must read as a status light
+   rather than an interruption. */
+.tl-buffer {
+  position: absolute; left: 50%; bottom: 18px;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px;
+  background: rgba(27, 24, 17, 0.86);
+  color: var(--accent-ink);
+  border-radius: 100px;
+  font-size: 11.5px; letter-spacing: 0.01em;
+  box-shadow: var(--shadow-panel);
+  pointer-events: none;
+  z-index: 3;
+}
+.tl-buffer[hidden] { display: none; }
+.tl-buffer-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
+  animation: tl-pulse 1s ease-in-out infinite;
+}
+@keyframes tl-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .tl-buffer-dot { animation: none; opacity: 1; }
+}
+
+/* ---------- transport ---------- */
+.tl-transport { flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; }
+
+.tl-rail-wrap {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 24px 10px;
+}
+.tl-rail { position: relative; height: 44px; margin: 0 6px; cursor: pointer; }
+.tl-rail-line { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--line); border-radius: 2px; }
+.tl-rail-fill { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); border-radius: 2px; }
+/* One tick per capture, every capture, sitting at its real position in
+   calendar time. The width between two ticks IS the gap the crawler left, so
+   the rail is never evenly spaced — evening it out would claim a continuity
+   the archive can't back up.
+
+   A record can hold hundreds of captures, so the tick width is computed from
+   the density (--tl-tick-w, set when the rail is built) and can be a single
+   pixel. At that width the tick itself is far too small to hit, so each one
+   carries an invisible expanded hit area: you can click or hover a lone
+   pixel without having to land on it. */
+.tl-rail-ticks { position: absolute; inset: 0; }
+.tl-tick {
+  position: absolute; bottom: 2px;
+  width: var(--tl-tick-w, 3px);
+  margin-left: calc(var(--tl-tick-w, 3px) / -2);
+  padding: 0; border: 0;
+  border-radius: 1px 1px 0 0;
+  background: var(--line-strong);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+/* The hit area, invisible, so a 1px tick is still clickable. */
+.tl-tick::after {
+  content: '';
+  position: absolute;
+  left: -5px; right: -5px;
+  top: -8px; bottom: -4px;
+}
+.tl-tick:hover, .tl-tick:focus-visible { background: var(--ink); outline: none; }
+.tl-tick:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+/* A capture we haven't measured yet: present, but not yet sized. It reads as a
+   fainter, shorter mark than one whose change counts have landed. */
+.tl-tick:not(.is-known) { background: var(--line); }
+.tl-rail-head {
+  position: absolute; bottom: -3px;
+  width: 12px; height: 12px; margin-left: -6px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--card);
+  box-shadow: 0 0 0 1px var(--accent);
+  pointer-events: none;
+  /* No transition: the head is now jumping between captures that can be a
+     few pixels apart on a dense rail, and easing it there makes the playhead
+     appear to drift through captures that are not on screen. */
+}
+.tl-rail-ends { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11.5px; }
+
+.tl-controls { display: flex; align-items: center; justify-content: center; gap: 18px; }
+
+.tl-icon-btn {
+  width: 38px; height: 38px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 50%;
+  background: transparent; color: var(--ink-soft);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.tl-icon-btn svg { width: 16px; height: 16px; }
+.tl-icon-btn:hover { border-color: var(--ink); color: var(--ink); }
+
+/* The one accent-filled control on the page, because it is the only one whose
+   absence leaves you with nothing to do. */
+.tl-play {
+  width: 54px; height: 54px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink);
+  cursor: pointer;
+  box-shadow: var(--shadow-panel);
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+.tl-play:hover { background: var(--accent-hover); }
+.tl-play:active { transform: scale(0.96); }
+.tl-play:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.tl-play svg { width: 22px; height: 22px; }
+.tl-play .tl-icon-pause { display: none; }
+.tl-play.is-playing .tl-icon-play { display: none; }
+.tl-play.is-playing .tl-icon-pause { display: block; }
+/* Locked until the record is whole. A live-looking play button over a
+   progress bar invites someone to press it, and the only possible outcome
+   would be silence. */
+.tl-play:disabled {
+  background: var(--line-strong);
+  color: var(--card);
+  cursor: default;
+  box-shadow: none;
+}
+.tl-play:disabled:hover { background: var(--line-strong); }
+.tl-play:disabled:active { transform: none; }
+
+.tl-counter { font-size: 12.5px; color: var(--ink-soft); min-width: 72px; }
+
+.tl-speeds { display: flex; align-items: center; gap: 2px; padding: 3px; background: var(--track); border-radius: 100px; }
+.tl-speed {
+  border: 0; background: transparent;
+  font-family: var(--mono); font-size: 11.5px;
+  color: var(--ink-soft);
+  padding: 5px 10px; border-radius: 100px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.tl-speed:hover { color: var(--ink); }
+.tl-speed.is-active { background: var(--card); color: var(--ink); box-shadow: var(--shadow-sm); }
+.tl-speed:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* The stage is the thing that must survive a narrow window, so it is the
+   first to give up room: the date shrinks before the film does, then the
+   transport stacks. */
+@media (max-width: 900px) {
+  .tl-modal { padding: 12px; }
+  .tl-body { padding: 18px 16px 16px; }
+  .tl-date { font-size: 26px; }
+  .tl-datecard { left: 14px; bottom: 14px; padding: 11px 15px 12px; }
+  .tl-delta { right: 14px; bottom: 14px; gap: 11px; padding: 9px 13px; }
+}
+@media (max-width: 620px) {
+  .tl-modal { padding: 0; }
+  .tl-panel { width: 100vw; height: 100vh; border-radius: 0; }
+  .tl-header { padding: 14px 18px; }
+  .tl-body { padding: 14px 12px 14px; gap: 14px; }
+  .tl-date { font-size: 21px; }
+  .tl-datecard { max-width: calc(100% - 28px); }
+  .tl-delta { display: none; }
+  .tl-controls { gap: 12px; }
+  .tl-speed { padding: 5px 9px; }
+  .tl-rail-wrap { padding: 14px 16px 8px; }
+  .tl-load-card { padding: 22px 22px 20px; }
+  .tl-load-title { font-size: 22px; }
+}
+
+/* ---------------------------------------------------------------------
    Palimpsest — visual language, v3
    An archive should feel like a well-kept paper record, not a web app:
    warm cream stock, a single confident ink (terracotta, like a date
@@ -138,6 +519,31 @@ a { color: var(--accent); }
   opacity: 0.7;
 }
 
+/* The way back out of the claim records. It rides in the header beside the
+   tagline, where a sub-page's exit belongs: quiet chrome, hairline and paper,
+   so it never competes with the page's own subject. */
+.topbar-end { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.topbar-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 15px 7px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 100px;
+  background: var(--card);
+  color: var(--ink-soft);
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: 0.005em;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.topbar-back:hover { border-color: var(--ink); color: var(--ink); background: var(--panel); }
+.topbar-back svg { width: 14px; height: 14px; display: block; flex: 0 0 auto; transition: transform 0.15s ease; }
+.topbar-back:hover svg { transform: translateX(-2px); }
+
 /* ---------- hero ---------- */
 .hero { padding: 40px 24px 40px; }
 .hero-inner {
@@ -274,6 +680,41 @@ a { color: var(--accent); }
 }
 .chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-tint); }
 
+/* The other way of reading the same archive, at the foot of the hero card. It
+   sits on the centre line everything else in this card is on, flanked by two
+   hairlines so the row reads as a divider with a door in it rather than as a
+   second, competing button. Tinted while idle and solid rust on hover: the
+   same progression the eyebrow and the primary button already use. */
+.hero-alt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 34px;
+}
+.hero-alt-line { flex: 1 1 0; max-width: 108px; height: 1px; background: var(--line-strong); opacity: 0.65; }
+.hero-alt-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 19px;
+  border: 1px solid var(--accent-soft);
+  border-radius: 100px;
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.005em;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+.hero-alt-link:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.hero-alt-link:active { transform: translateY(1px); }
+.hero-alt-arrow { width: 14px; height: 14px; display: block; flex: 0 0 auto; transition: transform 0.15s ease; }
+.hero-alt-link:hover .hero-alt-arrow { transform: translateX(2px); }
+
 .secondary-btn {
   padding: 11px 18px;
   border: 1.5px solid var(--ink);
@@ -308,19 +749,10 @@ a { color: var(--accent); }
 }
 .timeline-header .muted { margin: 0; font-size: 13px; }
 
-/* The key and the dashboard button are one cluster anchored to the right edge.
-   Before, all three header children were spread by justify-content, which left
-   the key stranded in open space between the site name and the button with
-   nothing on either side — it read as a stray row of text rather than a key.
-   The key itself is deliberately nothing but three dots and three words: no
-   container, no rule, no chrome. */
-.timeline-header-actions { display: flex; align-items: center; gap: 24px; flex-shrink: 0; }
-
-.legend { display: flex; align-items: center; gap: 18px; }
-.legend-item {
-  display: inline-flex; align-items: center; gap: 7px;
-  font-size: 12.5px; color: var(--ink-soft);
-}
+/* The two views of the same record — the dashboard and the film — are one
+   cluster anchored to the right edge, in that order: charts first, then
+   playback. */
+.timeline-header-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .dot-added { background: var(--added); }
@@ -723,12 +1155,13 @@ a { color: var(--accent); }
   .hero h1 { font-size: 36px; }
   .hero h1 br { display: none; }
   .topbar { padding: 20px 24px 10px; flex-direction: column; align-items: flex-start; gap: 4px; }
+  .topbar-end { width: 100%; justify-content: space-between; gap: 14px; }
   .url-form { flex-direction: column; border-radius: var(--radius); padding: 10px; }
   .url-form input { padding: 10px 8px; }
   .primary-btn, .url-form button { width: 100%; }
   .timeline-track-wrap { padding: 24px 22px 16px; }
   .timeline-header { flex-direction: column; align-items: stretch; gap: 16px; }
-  .timeline-header-actions { justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .timeline-header-actions { justify-content: flex-start; gap: 12px; flex-wrap: wrap; }
   .timeline-header h2 { font-size: 24px; }
   .change-counts { gap: 14px; flex-wrap: wrap; }
 }
@@ -741,6 +1174,8 @@ a { color: var(--accent); }
   .hero-eyebrow { margin-bottom: 18px; }
   .hero h1 { font-size: 29px; margin-bottom: 16px; }
   .hero-sub { font-size: 15px; margin-bottom: 26px; }
+  .hero-alt { margin-top: 26px; gap: 14px; }
+  .hero-alt-line { max-width: 60px; }
   .timeline-section { padding: 4px 16px 28px; }
   .timeline-header { padding: 0; }
   .timeline-track-wrap { padding: 20px 14px 12px; }
@@ -758,12 +1193,12 @@ a { color: var(--accent); }
   .notes-area { min-height: 220px; padding: 14px; }
   .site-footer { padding: 24px 18px 32px; }
   .pane-modal-panel { width: 100vw; height: 100vh; border-radius: 0; }
+  .topbar-back { padding: 6px 13px 6px 11px; }
 }
 
 @media (max-width: 560px) {
-  .timeline-header-actions { justify-content: flex-start; gap: 14px; }
-  .legend { gap: 12px; }
-  .legend-item { font-size: 12px; }
+  .timeline-header-actions { justify-content: flex-start; gap: 10px; }
+  .dash-open-btn { padding: 9px 14px; font-size: 12px; }
   .timeline-header h2 { font-size: 21px; }
   .hero h1 { font-size: 26px; }
   .hero-sub { font-size: 14.5px; }
@@ -780,8 +1215,7 @@ a { color: var(--accent); }
   .hero-inner { padding: 28px 16px 26px; }
   .timeline-section { padding: 4px 12px 24px; }
   .workspace { padding: 0 12px 32px; }
-  .legend { gap: 9px; }
-  .legend-item { font-size: 11.5px; }
+  .dash-open-btn { padding: 8px 12px; font-size: 11.5px; }
 }
 
 /* ---------- change detail tooltip ---------- */
@@ -1186,7 +1620,7 @@ a { color: var(--accent); }
 .dash-tooltip-row .dot { width: 7px; height: 7px; }
 .dash-tooltip-row b { font-weight: 500; color: var(--ink); margin-left: auto; padding-left: 14px; }
 .dash-tooltip-row-total { margin-top: 7px; padding-top: 8px; border-top: 1px solid var(--line); }
-.dash-tooltip-skip { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: 10.5px; line-height: 1.45; }
+.dash-tooltip-note { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: 10.5px; line-height: 1.45; }
 
 /* Four steps here too, and for the same reason: the measure strip is the first
    thing to break, then the two-up row, then the three-column list rows. */
@@ -1259,4 +1693,355 @@ a { color: var(--accent); }
   .dash-kpi-value { font-size: 22px; }
   .dash-card-header h4 { font-size: 12px; }
   .dash-row-list { gap: 11px; }
+}
+
+/* ---------------------------------------------------------------------
+   Palimpsest — Timelapse: keeping the film
+   The download uses the same parts as the rest of the film: a card, a
+   hairline, one accent-filled control. The only new object is the recording
+   row, and it lives under the stage on purpose — it is outside the frame the
+   recorder cuts, so the file never contains the controls that made it.
+========================================================================== */
+
+.tl-header-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+/* The download is a control on the film as a whole, not a second close button:
+   a hairline circle in the same box as its neighbour. */
+.tl-head-btn { width: 30px; height: 30px; border-width: 1px; }
+.tl-head-btn svg { width: 15px; height: 15px; }
+.tl-icon-btn:disabled { border-color: var(--line); color: var(--ink-faint); cursor: default; }
+.tl-icon-btn:disabled:hover { border-color: var(--line); color: var(--ink-faint); }
+
+/* ---------- the export card ---------- */
+.tl-export {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: rgba(239, 232, 214, 0.94);
+  backdrop-filter: blur(3px);
+  z-index: 4;
+}
+.tl-export[hidden] { display: none; }
+.tl-export-card {
+  width: min(560px, 100%);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lifted);
+  padding: 28px 30px 24px;
+}
+.tl-export-title {
+  font-family: var(--serif);
+  font-weight: 600; font-style: italic;
+  font-size: 27px; line-height: 1.2;
+  color: var(--ink);
+  margin: 8px 0 10px;
+  font-variant-numeric: tabular-nums;
+}
+.tl-export-sub { margin: 0 0 22px; font-size: 13px; color: var(--ink-soft); }
+.tl-export-row { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
+.tl-export-label { font-size: 12px; color: var(--ink-soft); }
+.tl-export-time { font-size: 12.5px; color: var(--ink); margin-left: auto; }
+.tl-export-actions { display: flex; align-items: center; gap: 12px; }
+.tl-export-note { margin: 16px 0 0; font-size: 12px; color: var(--ink-faint); min-height: 1.4em; }
+
+/* The primary is the only accent-filled rectangle in the film, and it is the
+   one whose absence leaves you with no video. */
+.tl-btn-primary {
+  border: 0; border-radius: 100px;
+  background: var(--accent); color: var(--accent-ink);
+  font-family: var(--sans); font-size: 13.5px; font-weight: 500;
+  padding: 10px 22px;
+  cursor: pointer;
+  box-shadow: var(--shadow-panel);
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+.tl-btn-primary:hover { background: var(--accent-hover); }
+.tl-btn-primary:active { transform: scale(0.98); }
+.tl-btn-ghost {
+  border: 1.5px solid var(--line-strong); border-radius: 100px;
+  background: transparent; color: var(--ink-soft);
+  font-family: var(--sans); font-size: 13px;
+  padding: 9px 18px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.tl-btn-ghost:hover { border-color: var(--ink); color: var(--ink); }
+
+/* ---------- the runway ---------- */
+.tl-prepare { display: flex; align-items: center; gap: 14px; }
+.tl-prepare[hidden] { display: none; }
+.tl-prepare-label { font-size: 11.5px; color: var(--ink-soft); white-space: nowrap; }
+.tl-prepare-bar { flex: 1; height: 3px; background: var(--track); border-radius: 2px; overflow: hidden; }
+.tl-prepare-fill { height: 100%; width: 0%; background: var(--accent); border-radius: 2px; transition: width 0.25s ease; }
+
+/* ---------- the recording row ---------- */
+.tl-recording {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 18px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.tl-recording[hidden] { display: none; }
+.tl-rec-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--removed);
+  animation: tl-pulse 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.tl-rec-dot[hidden] { display: none; }
+.tl-rec-label { font-size: 13px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-rec-time { font-size: 12px; color: var(--ink-soft); margin-left: auto; white-space: nowrap; }
+.tl-recording .tl-btn-ghost { flex-shrink: 0; }
+
+/* The tab capture that feeds the video. It is never seen; it only has to be in
+   the document for the browser to play a MediaStream into it. */
+.tl-export-video { position: fixed; left: -10000px; top: 0; width: 2px; height: 2px; }
+
+/* ---------------------------------------------------------------------
+   Palimpsest: Claim records
+   The same paper, the same card, the same hairline. What is new here is the
+   lifetime bar: a claim is a span of time during which a page said something,
+   so it is drawn as one, with its own deadline out past the end of the record.
+   Colour still means one thing only: red is what left, amber is what was
+   softened, green is what is still being said.
+========================================================================== */
+
+.claims-page .topbar { gap: 18px; }
+.wordmark-sub {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ink-faint);
+  margin-left: 10px;
+}
+
+/* The eyebrow is the one warm note in the hero: this page is about claims that
+   stopped being made, so it opens with the accent rather than the paper tone. */
+.hero-eyebrow-warn {
+  background: var(--accent-tint);
+  color: var(--accent);
+  border-color: var(--accent-soft);
+}
+
+/* ---------- the read ---------- */
+.cw-progress {
+  width: min(560px, 100%);
+  margin: 26px auto 0;
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
+  padding: 20px 22px 18px;
+}
+.cw-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.cw-progress-title { font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.cw-progress-count { font-size: 12px; color: var(--ink-soft); }
+.cw-progress-bar { margin-top: 12px; height: 5px; background: var(--track); border-radius: 3px; overflow: hidden; }
+.cw-progress-fill { height: 100%; width: 0%; background: var(--accent); border-radius: 3px; transition: width 0.3s ease; }
+.cw-progress-sub { margin: 12px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+
+/* ---------- report shell ---------- */
+.cw-report-section { padding: 0 28px 80px; }
+.cw-report { width: min(1180px, 100%); margin: 0 auto; }
+.cw-block { margin-top: 56px; }
+.cw-block-head { max-width: 760px; margin-bottom: 22px; }
+.cw-block-head h2 {
+  font-family: var(--serif); font-weight: 600; font-size: 27px; line-height: 1.2;
+  letter-spacing: -0.01em; margin: 0 0 10px; color: var(--ink);
+}
+.cw-block-sub { margin: 0; font-size: 14px; color: var(--ink-soft); }
+.cw-muted { color: var(--ink-soft); font-size: 14px; }
+
+/* ---------- verdict ---------- */
+.cw-verdict {
+  display: grid; grid-template-columns: minmax(300px, 1fr) minmax(320px, 1.1fr);
+  gap: 30px; align-items: center;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  padding: 34px 36px;
+}
+.cw-verdict-eyebrow {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--ink-soft);
+}
+.cw-verdict-score { display: flex; align-items: baseline; gap: 16px; margin: 6px 0 10px; }
+.cw-index {
+  font-family: var(--serif); font-weight: 600; font-size: 76px; line-height: 1;
+  letter-spacing: -0.03em; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.cw-index-band {
+  font-family: var(--serif); font-style: italic; font-weight: 500;
+  font-size: 21px; color: var(--ink);
+}
+.cw-verdict-note { margin: 0; font-size: 13.5px; color: var(--ink-soft); max-width: 46ch; }
+.cw-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.cw-stat { background: var(--panel); padding: 14px 16px; display: flex; flex-direction: column; gap: 3px; }
+.cw-stat-value { font-size: 20px; color: var(--ink); }
+.cw-stat-label { font-size: 11.5px; color: var(--ink-soft); }
+
+/* ---------- one edit ---------- */
+.cw-cluster {
+  margin-top: 26px;
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-soft);
+  border-radius: var(--radius);
+  padding: 22px 26px;
+}
+.cw-cluster-eyebrow {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--accent);
+}
+.cw-cluster-lead { margin: 8px 0 12px; font-size: 14px; color: var(--ink); max-width: 84ch; }
+.cw-cluster-list { margin: 0; padding-left: 18px; }
+.cw-cluster-list li { font-size: 13px; color: var(--ink-soft); margin-bottom: 4px; }
+
+/* ---------- ribbons ---------- */
+.cw-ribbons { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.cw-ribbon { padding: 16px 0 14px; border-bottom: 1px solid var(--line); }
+.cw-ribbon-top { display: flex; align-items: baseline; gap: 12px; }
+.cw-score-badge {
+  font-family: var(--mono); font-size: 12.5px; color: var(--ink);
+  background: var(--track); border-radius: 6px; padding: 3px 8px; flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.cw-cat {
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--ink-soft); border: 1px solid var(--line); border-radius: 100px;
+  padding: 3px 9px; flex-shrink: 0; white-space: nowrap;
+}
+.cw-claim-text {
+  margin: 0; font-size: 13.5px; color: var(--ink); flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cw-status { font-size: 11.5px; flex-shrink: 0; }
+.cw-status.is-erased { color: var(--removed); }
+.cw-status.is-softened { color: var(--changed); }
+.cw-status.is-live { color: var(--added); }
+
+/* The bar. The axis is the whole record plus however much countdown is still
+   ahead of the last capture, which is why a 2030 deadline can sit past the end
+   of the line: that distance is the finding, so it has to be visible. */
+.cw-track { position: relative; height: 30px; margin: 8px 0 4px; }
+.cw-track-axis { position: absolute; left: 0; right: 0; top: 15px; height: 1px; background: var(--line); }
+.cw-span { position: absolute; top: 11px; height: 9px; background: var(--ink); border-radius: 2px; }
+.cw-abs {
+  position: absolute; top: 11px; height: 9px; border-radius: 2px;
+  background: repeating-linear-gradient(135deg, var(--line-strong) 0 2px, transparent 2px 5px);
+  opacity: 0.55;
+}
+.cw-gapmark {
+  position: absolute; top: 11px; height: 9px; border-radius: 2px;
+  background: repeating-linear-gradient(135deg, var(--changed) 0 2px, transparent 2px 5px);
+  opacity: 0.7;
+}
+.cw-mark { position: absolute; top: 15px; }
+.cw-mark.is-erased {
+  width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
+  background: var(--removed); transform: rotate(45deg); border-radius: 1px;
+}
+.cw-mark.is-deadline {
+  width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
+  border: 1.5px solid var(--ink-soft); background: var(--card);
+  transform: rotate(45deg); border-radius: 1px;
+}
+.cw-mark.is-deadline b {
+  position: absolute; left: 50%; top: -17px; transform: translateX(-50%) rotate(-45deg);
+  font-family: var(--mono); font-size: 9.5px; font-weight: 500; color: var(--ink-soft);
+  white-space: nowrap;
+}
+.cw-ribbon-foot { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+
+/* ---------- dossiers ---------- */
+.cw-dossiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 20px; }
+.cw-dossier {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); padding: 22px 24px 20px;
+}
+.cw-dossier-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cw-dossier-score {
+  font-family: var(--mono); font-size: 13px; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.cw-quote {
+  margin: 16px 0 18px; padding: 0 0 0 16px; border-left: 2px solid var(--accent-soft);
+  font-family: var(--serif); font-style: italic; font-size: 16.5px; line-height: 1.45; color: var(--ink);
+}
+.cw-facts { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; }
+.cw-facts dt { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint); }
+.cw-facts dd { margin: 2px 0 0; font-size: 13px; color: var(--ink); }
+.cw-replaced {
+  margin: 18px 0 0; padding: 12px 14px; background: var(--panel-sunken);
+  border-radius: var(--radius-sm); font-size: 13px; color: var(--ink-soft);
+}
+.cw-replaced span {
+  display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--ink-faint); margin-bottom: 5px;
+}
+.cw-variants { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.cw-variants summary { font-size: 12.5px; color: var(--ink-soft); cursor: pointer; }
+.cw-variants ul { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.cw-variants li { display: grid; grid-template-columns: 62px 1fr 28px; gap: 10px; align-items: baseline; }
+.cw-variant-date { font-size: 11px; color: var(--ink-faint); }
+.cw-variant-text { font-size: 12.5px; color: var(--ink-soft); }
+.cw-variant-strength { font-size: 11px; color: var(--ink-faint); text-align: right; }
+
+/* ---------- analytics ---------- */
+.cw-analytics { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px; }
+.cw-panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 24px; }
+.cw-panel-title { margin: 0 0 18px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.cw-bar-row { display: grid; grid-template-columns: 168px 1fr 34px; align-items: center; gap: 12px; margin-bottom: 12px; }
+.cw-bar-label { font-size: 12.5px; color: var(--ink-soft); }
+.cw-bar-track { height: 12px; background: var(--track); border-radius: 3px; overflow: hidden; }
+.cw-bar-fill { height: 100%; background: var(--ink-faint); border-radius: 3px; transition: width 0.4s ease; }
+.cw-bar-fill.is-close { background: var(--removed); }
+.cw-bar-count { font-size: 12.5px; color: var(--ink); text-align: right; }
+.cw-panel-note { margin: 16px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+.cw-svg { width: 100%; height: auto; display: block; }
+.cw-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.cw-dot { fill: var(--card); stroke: var(--accent); stroke-width: 2; }
+.cw-grid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; }
+.cw-axis { font-family: var(--mono); font-size: 10px; fill: var(--ink-faint); }
+
+/* ---------- categories ---------- */
+.cw-categories { display: flex; flex-direction: column; gap: 14px; }
+.cw-cat-row { display: grid; grid-template-columns: 190px 1fr 190px; align-items: center; gap: 16px; }
+.cw-cat-name { font-size: 13.5px; color: var(--ink); }
+.cw-cat-track { display: flex; height: 14px; border-radius: 3px; overflow: hidden; background: var(--track); }
+.cw-cat-seg { height: 100%; }
+.cw-cat-seg.is-live { background: var(--added); }
+.cw-cat-seg.is-softened { background: var(--changed); }
+.cw-cat-seg.is-erased { background: var(--removed); }
+.cw-cat-figures { font-size: 12px; color: var(--ink-soft); text-align: right; }
+.cw-legend { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 12px; color: var(--ink-soft); }
+.cw-legend-key { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-left: 10px; }
+.cw-legend-key.is-live { background: var(--added); }
+.cw-legend-key.is-softened { background: var(--changed); }
+.cw-legend-key.is-erased { background: var(--removed); }
+
+/* ---------- method ---------- */
+.cw-method { border-top: 1px solid var(--line); padding-top: 44px; }
+.cw-method-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+.cw-method-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 24px; }
+.cw-method-card h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.cw-method-card p { margin: 0; font-size: 13px; color: var(--ink-soft); }
+.cw-method-card em { font-style: italic; color: var(--ink); }
+.cw-method-caveat { background: var(--panel-sunken); }
+
+/* ---------- empty ---------- */
+.cw-empty {
+  width: min(760px, 100%); margin: 0 auto 90px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel); padding: 34px 36px; text-align: center;
+}
+.cw-empty h2 { font-family: var(--serif); font-weight: 600; font-size: 26px; margin: 0 0 12px; }
+.cw-empty p { margin: 0; font-size: 14px; color: var(--ink-soft); }
+
+@media (max-width: 900px) {
+  .cw-verdict { grid-template-columns: 1fr; }
+  .cw-cat-row { grid-template-columns: 120px 1fr 90px; }
+  .cw-bar-row { grid-template-columns: 120px 1fr 30px; }
 }

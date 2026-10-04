@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Claim records · Palimpsest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+<link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16" />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="claims-page">
+
+  <div class="page-main">
+  <header class="topbar">
+    <div class="wordmark">
+      <span class="wordmark-text">Palimpsest</span>
+      <span class="wordmark-sub">claim records</span>
+    </div>
+    <div class="topbar-end">
+      <span class="tagline">the old text, still visible under the new</span>
+      <a class="topbar-back" href="/">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 12H6.5M11.5 7l-5 5 5 5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Back
+      </a>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="hero-inner">
+      <span class="hero-eyebrow hero-eyebrow-warn">Commitments, kept and dropped</span>
+      <h1>What did this site <br />stop promising?</h1>
+      <p class="hero-sub">
+        Give it an address. It reads the archived versions of that page, finds the promises made on
+        it, and shows the day each one stopped being said.
+      </p>
+
+      <form id="cwForm" class="url-form" autocomplete="off">
+        <input id="cwInput" type="text" placeholder="e.g. sustainability.google, apple.com/environment" required />
+        <button id="cwGo" type="submit">Read its claims</button>
+      </form>
+
+      <div class="example-chips">
+        <span class="example-label">or try</span>
+        <button type="button" class="chip" data-url="sustainability.google">sustainability.google</button>
+        <button type="button" class="chip" data-url="settlement.org">settlement.org</button>
+      </div>
+
+      <div id="cwProgress" class="cw-progress" hidden>
+        <div class="cw-progress-head">
+          <span class="cw-progress-title" id="cwProgressTitle">Reading the record</span>
+          <span class="cw-progress-count mono" id="cwProgressCount"></span>
+        </div>
+        <div class="cw-progress-bar"><div class="cw-progress-fill" id="cwProgressFill"></div></div>
+        <p class="cw-progress-sub" id="cwProgressSub"></p>
+      </div>
+
+      <p id="cwError" class="error-text" hidden></p>
+    </div>
+  </section>
+
+  <section id="cwReportSection" class="cw-report-section" hidden>
+    <div class="cw-report" id="cwReport">
+
+      <!-- Verdict -->
+      <div class="cw-verdict" id="cwVerdict">
+        <div class="cw-verdict-main">
+          <span class="cw-verdict-eyebrow">Withdrawal index</span>
+          <div class="cw-verdict-score">
+            <span class="cw-index" id="cwIndex">&nbsp;</span>
+            <span class="cw-index-band" id="cwBand"></span>
+          </div>
+          <p class="cw-verdict-note" id="cwVerdictNote"></p>
+        </div>
+        <div class="cw-stats" id="cwStats"></div>
+      </div>
+
+      <div class="cw-cluster" id="cwCluster" hidden></div>
+
+      <!-- Claim lifetimes -->
+      <section class="cw-block">
+        <header class="cw-block-head">
+          <h2>Every claim, across the whole record</h2>
+          <p class="cw-block-sub">
+            One line per claim, read from the first capture it appeared in to the last one that
+            carried it. The filled bar is the time the promise was on the page. The open space after
+            it is the time since it left. A diamond marks the promise's own deadline, and it sits
+            past the end of the record when that deadline has not arrived yet. The distance between
+            the two is the finding.
+          </p>
+        </header>
+        <div class="cw-ribbons" id="cwRibbons"></div>
+      </section>
+
+      <!-- Dossiers -->
+      <section class="cw-block">
+        <header class="cw-block-head">
+          <h2>Withdrawn, in its own words</h2>
+          <p class="cw-block-sub">
+            Each claim that left, quoted with the strongest wording it ever used, the day it was
+            last said, and the sentence that took its place if anything did.
+          </p>
+        </header>
+        <div class="cw-dossiers" id="cwDossiers"></div>
+      </section>
+
+      <!-- Analytics -->
+      <section class="cw-block">
+        <header class="cw-block-head">
+          <h2>Against its own countdown</h2>
+          <p class="cw-block-sub">
+            A promise carries its own clock. This places each withdrawal against the deadline the
+            promise itself named. A claim retired with two years left is not the same event as one
+            retired with thirty, and the record can tell the two apart.
+          </p>
+        </header>
+        <div class="cw-analytics">
+          <div class="cw-panel">
+            <h3 class="cw-panel-title">Withdrawn, by distance to its deadline</h3>
+            <div class="cw-chart" id="cwDeadlineChart"></div>
+          </div>
+          <div class="cw-panel">
+            <h3 class="cw-panel-title">Share of promises still being made</h3>
+            <div class="cw-chart" id="cwSurvivalChart"></div>
+            <p class="cw-panel-note" id="cwSurvivalNote"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="cw-block">
+        <header class="cw-block-head">
+          <h2>By subject</h2>
+          <p class="cw-block-sub">
+            What the page promised about, and how much of it held. A company can be fluent about
+            climate and silent about labour, and this is where that shows.
+          </p>
+        </header>
+        <div class="cw-categories" id="cwCategories"></div>
+      </section>
+
+      <!-- Method -->
+      <section class="cw-block cw-method">
+        <header class="cw-block-head">
+          <h2>How this is measured</h2>
+          <p class="cw-block-sub">
+            Every number above comes from these rules, applied to the same cached captures the
+            compare view and the timelapse read. The method is the argument, so it is written out
+            here where it can be argued with.
+          </p>
+        </header>
+        <div class="cw-method-grid">
+          <div class="cw-method-card">
+            <h3>What counts as a claim</h3>
+            <p>
+              A sentence is a candidate when it has a first-person actor and either a commitment cue
+              (<em>we will</em>, <em>we commit</em>, <em>committed to</em>, <em>we aim to</em>,
+              <em>our goal</em>, <em>working towards</em>, <em>dedicated to</em>, <em>net zero</em>,
+              <em>24/7 carbon-free energy</em>) or a quantified target with a horizon. Questions,
+              boilerplate, subscription prompts and link lists are discarded; sentences inside
+              scripts, styles and comments are cut before anything else looks at them.
+            </p>
+          </div>
+          <div class="cw-method-card">
+            <h3>How strength is scored</h3>
+            <p>
+              Strength starts from the verb: <em>will / commit / pledge</em> score highest,
+              <em>aim / plan / goal</em> next, <em>dedicated to / believe</em> lowest, with a penalty
+              for hedging (<em>may</em>, <em>where possible</em>, subject to) and a bonus for sitting
+              in a heading. Specificity is scored separately, because a strong verb around nothing
+              checkable is not the same object as <em>cut 30% by 2027</em>: a percentage or an
+              absolute number adds 0.40, a deadline 0.35, a named scope 0.15, a heading 0.10.
+            </p>
+          </div>
+          <div class="cw-method-card">
+            <h3>How claims are followed</h3>
+            <p>
+              A sentence is matched to an existing claim thread when they share their subject
+              vocabulary: token overlap of at least 0.45, boosted when they share archive-tracked
+              anchors (emissions, inclusion, plastic, privacy, wages and so on). Footnote numbers are
+              stripped before matching, so a promise survives its renumbering. A thread that is
+              absent from two or more consecutive captures and never returns is <em>withdrawn</em>;
+              one whose strength drops by 12 or more, or that loses its number or its date while
+              staying on the page, is <em>softened</em>.
+            </p>
+          </div>
+          <div class="cw-method-card">
+            <h3>How the index is built</h3>
+            <p>
+              Each claim scores up to 100 from its peak strength, its specificity, how long it was
+              held (sightings and span, so a week of daily captures cannot masquerade as a decade),
+              how close the withdrawal landed to its own deadline, and how it ended: withdrawn
+              outright, softened, or still standing. The site's index is 0.55 × the mean of its five
+              strongest claims plus 0.45 × its count of withdrawals that carried a number or a date.
+            </p>
+          </div>
+          <div class="cw-method-card cw-method-caveat">
+            <h3>What this cannot know</h3>
+            <p>
+              A record is one address's captures. A claim that left this page may still be standing
+              on another page of the same site. This measures disappearance from the pages on file,
+              not from the world. It cannot know intent, and it does not claim any: a page rewritten
+              for design reasons produces the same evidence as a page that changed its mind.
+              Repetition is not sincerity, and neither is silence an admission. What is measured is
+              only ever the text, the dates it was published, and the dates it was not.
+            </p>
+          </div>
+          <div class="cw-method-card">
+            <h3>Coverage</h3>
+            <p id="cwCoverage"></p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <section id="cwEmpty" class="cw-empty" hidden>
+    <h2 id="cwEmptyTitle">No claims found on this record</h2>
+    <p id="cwEmptyText"></p>
+  </section>
+  </div>
+
+  <footer class="site-footer">
+    <p>Snapshots are pulled live from the <a href="https://web.archive.org" target="_blank" rel="noopener">Internet Archive's Wayback Machine</a>. Palimpsest doesn't alter or endorse archived content, it just shows you where it changed.</p>
+  </footer>
+
+  <script src="/claims.js"></script>
+</body>
+</html>
