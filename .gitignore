@@ -4,6 +4,7 @@ data/
 .freebuff/
 
 public/media/*.mp4
+!public/media/wayback-1996-web.mp4
 *.db
 *.db-shm
 *.db-wal
