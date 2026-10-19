@@ -1,5 +1,10 @@
 # Palimpsest
 
+Palimpsest is a project of the D^4 Sustainable Futures Lab at McMaster
+University, led by Dr. Cansu Ekmekcioglu, Assistant Professor of Information
+Systems in the DeGroote School of Business. You can read more about her work
+at [ekmekcioglu.website](https://ekmekcioglu.website/).
+
 Trace how any website has changed over time. Enter an address, drag two
 handles across a timeline of every recorded snapshot, and see exactly what
 was added, removed, or edited between those two moments, side by side, with
