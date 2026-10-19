@@ -15,7 +15,7 @@
 // dashboard would show a page that never finishes reading anything.
 //
 // Because nothing here is re-implemented, what you see is what the shipped
-// page renders — the only stub is the handful of globals dashboard.js borrows
+// page renders, the only stub is the handful of globals dashboard.js borrows
 // from app.js (state, el, formatDate, escapeHtml, positionHandles, loadDiff).
 //
 //   node scripts/preview-dashboard.js
@@ -192,7 +192,7 @@ window.fetch = async (url) => {
   await new Promise((r) => setTimeout(r, 12));
   // The record walk wants a page on every step, not just numbers, because it is
   // storing the whole record for the timelapse to play later. This harness only
-  // ever draws the dashboard, so the pages are placeholders — but they have to
+  // ever draws the dashboard, so the pages are placeholders, but they have to
   // be present and non-empty or the walk treats the step as a failure.
   return {
     ok: true,
@@ -214,7 +214,7 @@ html = html.replace(
 );
 html = html.replace(/<link rel="stylesheet" href="\/styles\.css" \/>/, () => `<style>\n${css}\n</style>`);
 html = html.replace(/\s*<script src="\/app\.js"><\/script>/, '');
-// Every real script has to go, not just the two this harness inlines —
+// Every real script has to go, not just the two this harness inlines  
 // index.html also loads archiveStore.js and timelapse.js, and leaving those
 // tags in sends the preview server off for files that were never written.
 ['app.js', 'archiveStore.js', 'dashboard.js', 'timelapse.js'].forEach((f) => {

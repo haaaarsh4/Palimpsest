@@ -2,6 +2,8 @@ node_modules/
 .env
 data/
 .freebuff/
+
+public/media/*.mp4
 *.db
 *.db-shm
 *.db-wal

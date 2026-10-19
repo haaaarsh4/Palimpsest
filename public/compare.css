@@ -1,0 +1,36 @@
+/* ==========================================================================
+   Compare snapshots — one decoration only.
+   --------------------------------------------------------------------------
+   The hero headline keeps its marker highlight. Everything else on the page
+   is styled by the application's own stylesheets, exactly as it was: the hero
+   card, the url form and example chips, the record timeline and its handles,
+   the date bar, the viewer column, the snapshot panes, the changes list, the
+   hover detail card, the image popover, the dashboard and timelapse panels,
+   the notes pad and the insight panel.
+
+   Scoped to .compare-page so no other page can drift.
+   ========================================================================== */
+
+.compare-page {
+  --cmp-mark: rgba(246, 205, 77, 0.6);
+}
+
+/* The headline is pasted down as a marker strip: each line carries its own
+   swash. The red period stays loud. */
+.compare-page .page-hero h1 {
+  text-wrap: balance;
+  display: inline;
+  padding: 0.06em 0.35em;
+  background: linear-gradient(to bottom, var(--cmp-mark) 0%, var(--cmp-mark) 100%);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  line-height: 1.5;
+}
+
+/* A hair of air between that strip and the sentence under it. The strip is an
+   inline box, so its own margin-bottom does nothing: the distance between the
+   two is whatever the line box's leading leaves, which the marker has just
+   eaten into by hanging its paint below the baseline. Six pixels on the
+   paragraph's top edge is the whole of it, and it is set here rather than in
+   theme.css because it is this page's strip that needs the room. */
+.compare-page .page-hero .hero-sub { margin-top: 6px; }

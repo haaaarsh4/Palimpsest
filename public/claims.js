@@ -19,11 +19,12 @@
 // a timeline, how long a bar is, how tall a column is. That is drawing, not
 // analysis, and it is the only place the page is allowed to have an opinion.
 
-// The reading is paused while this page's interface is being settled. While it
-// is true, the button, the chips and any address handed over in the query
-// string do nothing at all, so this page never reaches the backend. Flip it to
-// false to put the reading back.
-const CW_PAUSED = true;
+// The reading is live: the button, the chips and any address handed over in
+// the query string all run cwRun below against /api/snapshots, /api/capture
+// and /api/claims. This flag exists only as a kill switch: while it is true
+// the page never reaches the backend and every submit is silently dropped,
+// which reads as a frozen page, so it must never be left true in a build.
+const CW_PAUSED = false;
 
 const el = (id) => document.getElementById(id);
 const fmt = new Intl.NumberFormat();

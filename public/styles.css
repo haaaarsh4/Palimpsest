@@ -1,9 +1,9 @@
 /* ---------------------------------------------------------------------
-   Palimpsest — Timelapse
+   Palimpsest, Timelapse
    The film is the same record the dashboard charts, played back. It is built
    from the same parts: a card, a hairline, the paper palette, the three
-   series colours and nothing else. The only new object is the stage — a
-   browser window, because that is honestly what an archived page is — and the
+   series colours and nothing else. The only new object is the stage, a
+   browser window, because that is honestly what an archived page is, and the
    only loud thing is the date, which has to be readable over whatever the
    page underneath happens to be doing. It sits on its own raised card for
    exactly that reason: white-on-white would vanish.
@@ -42,7 +42,7 @@
 .tl-header .pane-modal-close { width: 30px; height: 30px; font-size: 20px; flex-shrink: 0; }
 
 /* The body is a column of exactly two things: the stage takes everything it
-   can, the transport takes what it needs. No gap rhythm here — a film wants
+   can, the transport takes what it needs. No gap rhythm here, a film wants
    its frame as large as the window allows. */
 .tl-body {
   flex: 1; min-height: 0;
@@ -95,18 +95,21 @@
   border: 0;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 420ms ease;
+  /* Set from the film and scaled to the beat. A dissolve longer than the beat
+     leaves two captures blended at once for most of the run, which reads as a
+     page that never finished loading. */
+  transition: opacity var(--tl-fade, 420ms) ease;
   background: #fff;
 }
 .tl-frame.is-front { opacity: 1; }
 
 /* The date is the one thing in the whole film that must never be lost against
-   the page underneath, so it is a raised card with its own background — an
+   the page underneath, so it is a raised card with its own background, an
    archived page can be white, black, or a 2004 gradient, and none of those
    may decide whether you can read the year. */
 .tl-datecard {
   position: absolute; left: 22px; bottom: 22px;
-  display: flex; flex-direction: column; gap: 2px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
   padding: 14px 20px 15px;
   background: rgba(251, 247, 236, 0.94);
   backdrop-filter: blur(8px);
@@ -114,9 +117,31 @@
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow-lifted);
-  pointer-events: none;
+  /* A button, so it has to be told the things a div already was: the film's own
+     type, no platform chrome, and the pointer events the frames deliberately
+     give up. */
+  font: inherit; color: inherit; text-align: left; margin: 0;
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
   max-width: min(60%, 420px);
 }
+.tl-datecard:hover,
+.tl-datecard:focus-visible {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-lifted), 0 0 0 3px var(--accent-soft);
+  outline: none;
+}
+.tl-datecard:active { transform: translateY(1px); }
+/* The invitation. Muted until the card is touched, because the film is the
+   point and its furniture should not compete with the page behind it. */
+.tl-date-open {
+  margin-top: 7px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.01em;
+  color: var(--ink-faint);
+  transition: color 0.15s ease;
+}
+.tl-datecard:hover .tl-date-open,
+.tl-datecard:focus-visible .tl-date-open { color: var(--accent); }
 .tl-date-eyebrow {
   font-size: 10px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.1em;
@@ -151,6 +176,53 @@
 .tl-delta-fig.is-added b { color: var(--added); }
 .tl-delta-fig.is-removed b { color: var(--removed); }
 .tl-delta-fig.is-changed b { color: var(--changed); }
+
+/* ---------- scrolling the page inside the stage ----------
+   The stage is a window onto a page that is nearly always taller than it, and
+   there was no way to reach the rest of one: the frames are inert on purpose (a
+   click must never navigate away from the record), so they never see a wheel
+   either. This is the affordance for the wheel that does reach them, a hairline
+   track on the right, sized to how much of the page is out of sight, draggable,
+   and shown only when there is something below. */
+.tl-scroll {
+  position: absolute; top: 10px; right: 8px; bottom: 10px; width: 11px;
+  z-index: 6;
+}
+.tl-scroll[hidden] { display: none; }
+.tl-scroll-thumb {
+  position: absolute; left: 2px; width: 7px; border-radius: 100px;
+  background: rgba(27, 24, 17, 0.26);
+  transition: background 0.15s ease;
+  will-change: transform;
+}
+.tl-scroll:hover .tl-scroll-thumb, .tl-scroll.is-dragging .tl-scroll-thumb {
+  background: rgba(27, 24, 17, 0.52);
+}
+
+/* The one piece of text the stage itself ever holds: said once, when a capture
+   taller than the window first arrives, and gone the first time it is used. */
+.tl-scroll-hint {
+  position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+  z-index: 6; pointer-events: none;
+  padding: 7px 15px; border-radius: 100px;
+  background: rgba(27, 24, 17, 0.74); color: var(--accent-ink);
+  font-size: 11.5px; letter-spacing: 0.01em; white-space: nowrap;
+  animation: dash-fade 0.2s ease-out both;
+}
+.tl-scroll-hint[hidden] { display: none; }
+
+/* The file being written, shown on the stage while it is written. Letterboxed
+   like a video rather than cropped like a window, because that is what it is:
+   the composition the encoder is being handed. */
+.tl-live {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  z-index: 7; background: #14120C; object-fit: contain;
+}
+.tl-live[hidden] { display: none; }
+
+/* Both of these are set in JS during an export; `hidden` has to win over the
+   display rules they need the rest of the time. */
+.tl-datecard[hidden], .tl-delta[hidden] { display: none; }
 
 /* ---------- phase one: retrieving the record ----------
    A long wait is only acceptable if it is legible. This says what is
@@ -250,7 +322,7 @@
 .tl-rail-fill { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); border-radius: 2px; }
 /* One tick per capture, every capture, sitting at its real position in
    calendar time. The width between two ticks IS the gap the crawler left, so
-   the rail is never evenly spaced — evening it out would claim a continuity
+   the rail is never evenly spaced, evening it out would claim a continuity
    the archive can't back up.
 
    A record can hold hundreds of captures, so the tick width is computed from
@@ -380,12 +452,12 @@
 }
 
 /* ---------------------------------------------------------------------
-   Palimpsest — visual language, v3
+   Palimpsest, visual language, v3
    An archive should feel like a well-kept paper record, not a web app:
    warm cream stock, a single confident ink (terracotta, like a date
    stamp), a big editorial serif for anything that wants to be read, and
    generous, rounded, poster-like cards instead of boxy panels. Diffs
-   stay quiet — a soft tint with a colored edge — so the one place color
+   stay quiet, a soft tint with a colored edge, so the one place color
    is loud is the accent itself.
 ------------------------------------------------------------------------ */
 
@@ -417,7 +489,7 @@
   --changed-soft: #F5EAD3;
 
   /* Neutral ink and a bar track, for the two charts that measure something
-     other than a diff — crawler coverage and element-type counts. Deliberately
+     other than a diff, crawler coverage and element-type counts. Deliberately
      not one of the three series colours: in the dashboard, colour means
      added, removed or changed and nothing else may use it. */
   --coverage: #A79D7E;
@@ -440,7 +512,16 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; scrollbar-gutter: stable; }
+/* Moving between pages swaps whole documents, and a bare swap paints a white
+   flash while the next page's hero lays itself out, which reads as the page
+   loading in the wrong shape and then jumping into place. Where the browser
+   supports cross-document transitions this crossfades the two instead, so a
+   navigation lands instead of blinking. Anything older ignores the rule and
+   navigates exactly as before. */
+@view-transition {
+  navigation: auto;
+}
 
 body {
   margin: 0;
@@ -459,7 +540,7 @@ body {
 }
 .page-main { flex: 1 0 auto; }
 
-/* Slim, quiet scrollbars — the OS default reads as a jarring gray gutter
+/* Slim, quiet scrollbars, the OS default reads as a jarring gray gutter
    against a warm paper palette, so every internally-scrolling panel gets
    a thin colored thumb that matches the ink/line palette instead. */
 * { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
@@ -479,10 +560,10 @@ a { color: var(--accent); }
   top: 0;
   z-index: 30;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 24px 48px;
+  padding: 20px 48px;
   background: rgba(239, 232, 214, 0.78);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -497,52 +578,55 @@ a { color: var(--accent); }
   letter-spacing: -0.005em;
   color: var(--ink);
 }
-.tagline {
+/* The other two ways into the archive, as one segmented capsule rather than
+   two floating buttons: the header then reads as a wordmark and a switch, which
+   is the whole of what this site is. It is built from the parts everything else
+   here is built from, a hairline, a paper fill, one accent dot for the section
+   you are standing in, so it belongs to the page instead of sitting on it. */
+.topnav {
+  display: inline-flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 100px;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.topnav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 20px;
   color: var(--ink-soft);
-  font-family: var(--serif);
-  font-style: italic;
+  font-family: var(--sans);
+  font-weight: 500;
   font-size: 13.5px;
   letter-spacing: 0.005em;
-  position: relative;
-  padding-left: 20px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.16s ease, color 0.16s ease;
 }
-.tagline::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
+.topnav-link:hover { background: var(--panel-sunken); color: var(--ink); }
+/* the capsule clips its corners, so the focus ring is drawn inside the segment */
+.topnav-link:focus-visible { outline-offset: -2px; }
+.topnav-link[aria-current="page"] { background: var(--panel-sunken); color: var(--ink); }
+.topnav-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: var(--accent);
-  opacity: 0.7;
+  flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity 0.16s ease;
 }
+.topnav-link[aria-current="page"] .topnav-dot { opacity: 1; }
+.topnav-div { width: 1px; margin: 8px 0; background: var(--line); }
 
-/* The way back out of the claim records. It rides in the header beside the
-   tagline, where a sub-page's exit belongs: quiet chrome, hairline and paper,
-   so it never competes with the page's own subject. */
-.topbar-end { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
-.topbar-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 15px 7px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 100px;
-  background: var(--card);
-  color: var(--ink-soft);
-  font-family: var(--sans);
-  font-weight: 600;
-  font-size: 12.5px;
-  letter-spacing: 0.005em;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
-}
-.topbar-back:hover { border-color: var(--ink); color: var(--ink); background: var(--panel); }
-.topbar-back svg { width: 14px; height: 14px; display: block; flex: 0 0 auto; transition: transform 0.15s ease; }
-.topbar-back:hover svg { transform: translateX(-2px); }
+/* A wordmark that is also the way home, on every page but the front one. */
+a.wordmark { text-decoration: none; }
+a.wordmark:hover .wordmark-text { color: var(--accent); }
+.wordmark-text { transition: color 0.15s ease; }
 
 /* ---------- hero ---------- */
 .hero { padding: 40px 24px 40px; }
@@ -560,7 +644,7 @@ a { color: var(--accent); }
 }
 .hero-inner > * { position: relative; z-index: 1; }
 .hero-inner::before {
-  /* a faint stamped ring in the corner — quiet nod to "archive record" */
+  /* a faint stamped ring in the corner, quiet nod to "archive record" */
   content: '';
   position: absolute;
   top: -60px;
@@ -680,41 +764,6 @@ a { color: var(--accent); }
 }
 .chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-tint); }
 
-/* The other way of reading the same archive, at the foot of the hero card. It
-   sits on the centre line everything else in this card is on, flanked by two
-   hairlines so the row reads as a divider with a door in it rather than as a
-   second, competing button. Tinted while idle and solid rust on hover: the
-   same progression the eyebrow and the primary button already use. */
-.hero-alt {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  margin-top: 34px;
-}
-.hero-alt-line { flex: 1 1 0; max-width: 108px; height: 1px; background: var(--line-strong); opacity: 0.65; }
-.hero-alt-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 9px 19px;
-  border: 1px solid var(--accent-soft);
-  border-radius: 100px;
-  background: var(--accent-tint);
-  color: var(--accent);
-  font-family: var(--sans);
-  font-weight: 600;
-  font-size: 13px;
-  letter-spacing: 0.005em;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
-}
-.hero-alt-link:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.hero-alt-link:active { transform: translateY(1px); }
-.hero-alt-arrow { width: 14px; height: 14px; display: block; flex: 0 0 auto; transition: transform 0.15s ease; }
-.hero-alt-link:hover .hero-alt-arrow { transform: translateX(2px); }
-
 .secondary-btn {
   padding: 11px 18px;
   border: 1.5px solid var(--ink);
@@ -749,7 +798,7 @@ a { color: var(--accent); }
 }
 .timeline-header .muted { margin: 0; font-size: 13px; }
 
-/* The two views of the same record — the dashboard and the film — are one
+/* The two views of the same record, the dashboard and the film, are one
    cluster anchored to the right edge, in that order: charts first, then
    playback. */
 .timeline-header-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
@@ -800,14 +849,39 @@ a { color: var(--accent); }
 
 .selection-bar { margin: 22px 0 0; padding: 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
 .selection-dates {
-  display: flex; align-items: center; gap: 20px;
+  display: grid; grid-template-columns: auto auto 1fr; align-items: center; column-gap: 0;
   background: var(--card); border: 1px solid var(--line); border-radius: 100px;
   padding: 10px 26px; box-shadow: var(--shadow-sm);
 }
-.selection-date { display: flex; flex-direction: column; gap: 3px; }
+.selection-date { display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 0 20px; min-width: 0; }
+.selection-date:first-child { padding-left: 0; padding-right: 8px; }
+.selection-date:last-child { padding-right: 0; padding-left: 26px; }
 .selection-label { font-size: 10.5px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.07em; }
 .selection-value { font-size: 15px; color: var(--ink); }
-.selection-arrow { color: var(--accent); font-size: 16px; }
+/* The arrow hugs the FROM date rather than sitting at the pill's midpoint:
+   equal tracks centered it geometrically, but the FROM date is the longer
+   text, so the midpoint read as pushed toward TO with dead space on the
+   right. The TO cell takes all leftover room instead. Vertically the arrow
+   is centered on the date row itself, the ~7px nudge compensates the label
+   sitting above the date rather than on the label-plus-date stack. */
+.selection-arrow {
+  justify-self: start; align-self: center;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent); font-size: 16px; line-height: 1;
+  margin: 0;
+  transform: translateY(7px);
+}
+/* The two dates read as plain values but take typing: same type, no chrome.
+   Invalid input flashes red and falls back to the capture date. */
+.selection-input {
+  border: 0; background: transparent; padding: 0; margin: 0;
+  font: inherit; color: inherit; letter-spacing: inherit;
+  outline: none; cursor: text; min-width: 0;
+  width: 13ch;
+  field-sizing: content;
+}
+.selection-input:focus { outline: none; }
+.selection-input.invalid { color: var(--removed); }
 
 /* ---------- workspace ---------- */
 .workspace {
@@ -816,39 +890,60 @@ a { color: var(--accent); }
 }
 .workspace[hidden] { display: none; }
 .viewer-column {
-  padding: 28px;
+  padding: 24px;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-panel);
-  min-height: 540px;
+  min-height: 660px;
   display: flex;
   flex-direction: column;
 }
 .viewer-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; gap: 12px; flex-shrink: 0; }
-.view-toggle {
-  display: inline-flex; padding: 4px; gap: 2px;
-  border-radius: 100px; background: var(--panel-sunken);
-}
-.toggle-btn {
-  padding: 8px 16px; border: none; background: transparent; color: var(--ink-soft);
-  font-family: var(--sans); font-weight: 500; font-size: 13px; cursor: pointer;
-  border-radius: 100px;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-.toggle-btn:hover:not(.active) { color: var(--ink); }
-.toggle-btn.active { background: var(--ink); color: var(--accent-ink); }
+.viewer-toolbar-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+/* Diff the pages the panes are actually showing (after following links),
+   rather than the snapshots the comparison started from. Quiet secondary
+   chrome until a pane has wandered somewhere worth comparing. */
+.compare-pages-btn, .copy-link-btn { padding: 8px 16px; font-size: 12.5px; }
+.compare-pages-btn:disabled, .copy-link-btn:disabled { opacity: 0.45; cursor: default; }
+/* The two actions live where the old layout switch lived: the comparison is
+   always side by side, so the switch is gone and the buttons take its place,
+   Compare open pages first, then Copy link. */
+.viewer-actions { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
-.change-counts { display: flex; gap: 20px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft); }
+/* The counts are a row of switches now, so they carry their own padding and
+   the gap between them is only the seam: 4px here plus the switch's own 10px
+   is the twenty-odd pixels of air the row had when the three were plain text. */
+.change-counts { display: flex; gap: 4px; font-family: var(--mono); font-size: 13.5px; color: var(--ink-soft); }
 .change-counts b { color: var(--ink); font-weight: 600; }
 /* The counts carry the same swatches as the header key, so the key above the
    timeline and the tally beside the diff are visibly the same three colours. */
 .change-count { display: inline-flex; align-items: center; gap: 7px; }
 .change-count .dot { width: 7px; height: 7px; }
+/* Each count is also the filter for its own kind: pressed, only that kind is
+   left in the list and lit on the pages. The switch's padding and its
+   transparent border are on in both states, so pressing one never shifts the
+   row it sits in, and the pressed state speaks the app's existing language for
+   a selected control - an ink fill with the accent ink - rather than a new
+   one. */
+button.change-count {
+  padding: 4px 10px; border: 1px solid transparent; border-radius: 999px;
+  background: none; font: inherit; color: inherit; cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+button.change-count:hover { border-color: var(--line-strong); color: var(--ink); }
+button.change-count:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.change-count[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--accent-ink); }
+button.change-count[aria-pressed="true"] b { color: inherit; }
 
-.viewer-panes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; flex: 1; min-height: 0; }
-.viewer-panes.overlay-mode { grid-template-columns: 1fr; }
-.viewer-panes.overlay-mode .pane:first-child { display: none; }
+/* What the switches are showing, out of what, and the way back to the whole
+   record. Only up while something is switched off, so a list nobody has
+   narrowed is the list it always was. */
+.change-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 2px 10px; }
+.change-filter-bar[hidden] { display: none; }
+.change-filter-note { font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); }
+
+.viewer-panes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; flex: 1; min-height: 0; transition: grid-template-columns 0.6s cubic-bezier(0.22, 1, 0.36, 1), gap 0.45s ease; }
 
 .pane { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--panel); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; min-height: 0; position: relative; }
 
@@ -858,9 +953,71 @@ a { color: var(--accent); }
    column takes essentially all the remaining width. */
 .viewer-panes.hide-old { grid-template-columns: 40px 1fr; gap: 10px; }
 .viewer-panes.hide-new { grid-template-columns: 1fr 40px; gap: 10px; }
+/* Turning the grid's animation off for a moment.
+
+   A card click has to ask "is this change visible at the pair's width?"
+   before it can decide whether to fold a snapshot, and that question is
+   answered by the browser's layout - measured while grid-template-columns is
+   mid-transition, it gets a width the reader never sees, and the answer is
+   wrong in whichever direction the animation happened to be going. The class
+   is applied synchronously around that measurement and taken off a frame
+   later, so the one layout the browser paints is the final one. */
+.viewer-panes.pane-instant { transition: none !important; }
+.viewer-panes.pane-instant .pane .pane-label,
+.viewer-panes.pane-instant .pane .pane-frame-wrap { transition: none !important; }
+/* The surviving pane eases wider on the grid transition above while the
+   collapsed strip fades in, so hiding a snapshot reads as a slow fold
+   rather than a snap. Readers who ask for reduced motion get the instant
+   version. */
+/* The slow fold: collapsing fades the leaving pane's own content out
+   (driven from setSinglePaneView, which flips the grid ~380ms later so
+   the grid's own 0.6s ease carries the width), expanding flips the grid
+   first and lets the same ease carry it open. Content fades rather than
+   blinking because its display flips with the grid, not before it. */
+.viewer-panes .pane .pane-label,
+.viewer-panes .pane .pane-frame-wrap {
+  transition: opacity 0.34s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.viewer-panes.pane-leaving-old .pane:first-child .pane-label,
+.viewer-panes.pane-leaving-old .pane:first-child .pane-frame-wrap {
+  opacity: 0; transform: translateX(-28px); pointer-events: none;
+}
+.viewer-panes.pane-leaving-new .pane:last-child .pane-label,
+.viewer-panes.pane-leaving-new .pane:last-child .pane-frame-wrap {
+  opacity: 0; transform: translateX(28px); pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .viewer-panes .pane .pane-label,
+  .viewer-panes .pane .pane-frame-wrap {
+    transition: none;
+  }
+}
+@keyframes pdiffStripIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  60% { opacity: 1; }
+  to { opacity: 1; transform: none; }
+}
+.viewer-panes.hide-old .pane:first-child .pane-restore-btn,
+.viewer-panes.hide-new .pane:last-child .pane-restore-btn {
+  animation: pdiffStripIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .viewer-panes { transition: none; }
+  .viewer-panes.hide-old .pane:first-child .pane-restore-btn,
+  .viewer-panes.hide-new .pane:last-child .pane-restore-btn {
+    animation: none;
+  }
+}
+/* The address row goes with the rest of the collapsed pane. Left displayed
+   at strip width it was a 38px-wide white chip stuck under a hairline at
+   the top, holding only the archive button, which read as a stray box (or
+   a bin) rather than as part of a snapshot. The strip is the restore
+   control and nothing else. */
 .viewer-panes.hide-old .pane:first-child .pane-label,
+.viewer-panes.hide-old .pane:first-child .pane-addressbar,
 .viewer-panes.hide-old .pane:first-child .pane-frame-wrap,
 .viewer-panes.hide-new .pane:last-child .pane-label,
+.viewer-panes.hide-new .pane:last-child .pane-addressbar,
 .viewer-panes.hide-new .pane:last-child .pane-frame-wrap {
   display: none;
 }
@@ -869,15 +1026,18 @@ a { color: var(--accent); }
   display: flex;
 }
 
+/* The whole strip is one control: a circled chevron over the snapshot's own
+   name, centred down the full height of the card, on the sunken paper. */
 .pane-restore-btn {
   display: none;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 14px;
   width: 100%;
   height: 100%;
   min-height: 200px;
+  padding: 0;
   border: none;
   background: var(--panel-sunken);
   color: var(--ink-soft);
@@ -885,7 +1045,15 @@ a { color: var(--accent); }
   transition: color 0.15s ease, background 0.15s ease;
 }
 .pane-restore-btn:hover { color: var(--accent); background: var(--panel); }
-.pane-restore-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+.pane-restore-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.pane-restore-btn svg {
+  width: 14px; height: 14px; flex-shrink: 0;
+  padding: 6px; box-sizing: content-box;
+  border: 1px solid var(--line-strong); border-radius: 50%;
+  transition: border-color 0.15s ease, transform 0.2s ease;
+}
+.pane-restore-btn:hover svg { border-color: var(--accent); transform: translateX(-1px); }
+.viewer-panes.hide-new .pane:last-child .pane-restore-btn:hover svg { transform: translateX(1px); }
 .pane-restore-label {
   writing-mode: vertical-rl;
   text-orientation: mixed;
@@ -896,13 +1064,13 @@ a { color: var(--accent); }
   text-transform: uppercase;
 }
 
-.pane-label { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 12.5px; background: var(--panel-sunken); flex-shrink: 0; }
+.pane-label { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 13.5px; background: var(--panel-sunken); flex-shrink: 0; }
 .pane-label-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .pane-label-right { display: flex; align-items: center; gap: 10px; }
 
 /* A little browser-chrome cluster: back, forward, and a reset action that
    snaps straight back to the diffed comparison. Ink-dark, pill-shaped,
-   icon only — meant to read as "this is a tiny browser" rather than an
+   icon only, meant to read as "this is a tiny browser" rather than an
    app button. */
 .pane-nav-toolbar {
   display: flex;
@@ -927,6 +1095,10 @@ a { color: var(--accent); }
 }
 .pane-nav-btn:hover { background: rgba(255,255,255,0.16); }
 .pane-nav-btn:active { background: rgba(255,255,255,0.26); }
+/* Back/forward have nowhere to go until the pane has wandered: dim them
+   rather than letting a dead click pass in silence. */
+.pane-nav-btn:disabled { opacity: 0.3; cursor: default; }
+.pane-nav-btn:disabled:hover { background: transparent; }
 .pane-nav-btn svg { width: 14px; height: 14px; }
 
 .pane-expand-btn {
@@ -947,8 +1119,46 @@ a { color: var(--accent); }
 
 .pane-tag { font-family: var(--sans); font-weight: 600; color: var(--ink-faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
 .pane-tag-new { color: var(--accent); }
+/* The browser-style address bar under each pane's toolbar: what the pane is
+   showing right now, as a real address. Home (the diffed comparison) reads
+   as the snapshot's own archived address; followed links show where they
+   went. Typing an address and pressing Enter follows it like a browser. */
+.pane-addressbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+/* The archive toggle: a real button with breathing room around it, showing
+   the full archived address on click (handy for copying the exact capture)
+   and the page's own address otherwise. */
+.pane-archive-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; flex-shrink: 0;
+  border: 1px solid transparent; border-radius: 7px;
+  background: transparent; color: var(--ink-faint);
+  cursor: pointer; padding: 0;
+}
+.pane-archive-btn svg { width: 14px; height: 14px; }
+.pane-archive-btn:hover { color: var(--ink); background: var(--card); border-color: var(--line); }
+.pane-archive-btn[aria-pressed="true"] { color: var(--accent); background: var(--card); border-color: var(--line-strong); }
+.pane-url {
+  flex: 1; min-width: 0;
+  border: 1px solid transparent; background: transparent;
+  border-radius: 7px; padding: 4px 9px; margin: 0;
+  font-size: 11.5px; color: var(--ink-soft);
+  outline: none; cursor: text;
+  text-overflow: ellipsis;
+}
+.pane-url:hover { border-color: var(--line); }
+.pane-url:focus {
+  color: var(--ink); background: var(--card); border-color: var(--line-strong);
+  box-shadow: 0 0 0 3px var(--focus-ring, rgba(200, 30, 58, 0.12));
+}
+
 .pane-frame { width: 100%; height: 100%; border: none; display: block; background: #fff; overflow-x: hidden; overflow-y: auto; }
-.pane-frame-wrap { position: relative; flex: 1; min-height: 420px; }
+.pane-frame-wrap { position: relative; flex: 1; min-height: 560px; }
 .pane-loading {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
@@ -957,6 +1167,38 @@ a { color: var(--accent); }
 }
 .pane-loading.hidden { opacity: 0; pointer-events: none; }
 .pane-loading .spinner { width: 20px; height: 20px; border-width: 3px; }
+
+/* The comparison's own badges, in a layer over the frame's own box: the
+   SELECTED word is app chrome, so it is drawn here rather than inside the
+   snapshot, where the page's own rules could clip it or paint a menu over it.
+   It covers the frame exactly, takes no pointer events, and clips at the
+   frame's edges so a badge can never bleed into the pane's toolbar. */
+.pane-badges {
+  position: absolute; inset: 0; z-index: 4;
+  overflow: hidden;
+  pointer-events: none;
+}
+.pane-badge {
+  position: absolute;
+  display: inline-block;
+  white-space: nowrap;
+  padding: 4px 9px;
+  border-radius: 100px;
+  background: var(--pdiff-badge, #C0362C);
+  color: #fff;
+  font-family: -apple-system, 'Segoe UI', Verdana, sans-serif;
+  font-size: 10px; font-weight: 700; line-height: 1; letter-spacing: 0.08em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  /* Opacity only, never transform: the badge is placed with an inline
+     transform, and an animated transform would overrule it for the length
+     of the animation and drop the word on top of the element it names. */
+  animation: paneBadgePop 0.28s ease-out;
+}
+@keyframes paneBadgePop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
 .hero-loading { justify-content: center; margin-top: 24px; }
 
@@ -995,28 +1237,64 @@ a { color: var(--accent); }
 .changes-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  /* The bar stands in its own slot rather than on the cards. The content is
+     inset by a hair more than the track is wide, so the thumb runs down a clear
+     strip beside the rows: it used to sit flush on the rounded corner of every
+     card, which read as a broken border rather than a scrollbar. The slot is
+     reserved even when the list is short, so filtering a few rows out (which
+     hides them rather than removing them) does not shift the surviving cards
+     sideways by the width of a disappearing bar. */
+  padding: 0 12px 0 0;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  /* The bar is drawn by the pseudo-elements below, not by the platform: the
+     native thin bar carries square ends and an arrow button at each end, and
+     against this list's rounded cards those read as two broken corners. */
+  scrollbar-width: auto;
+  scrollbar-color: auto;
 }
-.change-row { display: flex; gap: 10px; padding: 13px 10px; margin: 0 -10px 4px; border-bottom: 1px solid var(--line); border-left: 3px solid transparent; cursor: pointer; transition: background 0.12s ease, border-color 0.12s ease; border-radius: var(--radius-sm); }
-.change-row:last-child { border-bottom: none; }
-.change-row.selected { background: var(--accent-tint); border-left-color: var(--accent); }
+/* A rounded thumb, inset inside its own lane, no buttons, nothing drawn when
+   the list is short. The transparent border and background-clip are what pull
+   the ink off the lane's edges, so the thumb floats beside the cards instead
+   of being a stripe painted over the column. */
+.changes-list::-webkit-scrollbar { width: 9px; }
+.changes-list::-webkit-scrollbar-button { display: none; height: 0; }
+.changes-list::-webkit-scrollbar-track { background: transparent; margin: 8px 0; }
+.changes-list::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 100px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  min-height: 40px;
+}
+.changes-list::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-faint);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+/* Engines without the pseudo-elements (Firefox) keep the quiet thin bar the
+   sheet already sets for every panel. */
+@supports not selector(::-webkit-scrollbar) {
+  .changes-list { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+}
+.change-row { display: flex; gap: 0; padding: 12px 14px; margin: 0 0 6px; border: 1px solid var(--line); border-radius: 14px; background: transparent; cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease, transform 0.2s ease; }
+.change-row:last-child { margin-bottom: 0; }
+/* A row the switches have hidden: nowhere on screen, still in the list. The
+   rows are addressed by index from clicks inside the panes, so filtering
+   takes them out of sight rather than out of the document. */
+.change-row[hidden] { display: none; }
+.change-row.selected { background: var(--accent-tint); border-color: var(--accent); box-shadow: 0 4px 16px rgba(185, 69, 48, 0.14); }
 .change-row.selected .change-kind { color: var(--accent); }
-.change-row.selected .change-marker { box-shadow: 0 0 0 2px var(--accent-soft); }
-.change-row:hover:not(.selected) { background: var(--panel-sunken); }
+.change-row:hover:not(.selected) { background: var(--panel-sunken); border-color: var(--line-strong); }
 .change-row:hover:not(.selected) .change-text { color: var(--accent); }
-.change-marker { width: 7px; height: 7px; border-radius: 50%; margin-top: 7px; flex-shrink: 0; }
-.change-marker.added { background: var(--added); }
-.change-marker.removed { background: var(--removed); }
-.change-marker.changed { background: var(--changed); }
 .change-body { flex: 1; min-width: 0; }
-.change-kind { font-size: 10px; text-transform: lowercase; color: var(--ink-faint); font-family: var(--mono); overflow-wrap: anywhere; }
+.change-kind { font-size: 11px; text-transform: lowercase; color: var(--ink-faint); font-family: var(--mono); overflow-wrap: anywhere; }
 .change-text {
-  font-size: 13px; color: var(--ink); margin: 4px 0 0; overflow: hidden; text-overflow: ellipsis;
+  font-size: 14px; line-height: 1.5; color: var(--ink); margin: 4px 0 0; overflow: hidden; text-overflow: ellipsis;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow-wrap: anywhere; word-break: break-word;
   transition: color 0.12s ease;
@@ -1129,6 +1407,9 @@ a { color: var(--accent); }
 }
 .pane-modal-close:hover { background: var(--panel); color: var(--ink); }
 .pane-modal-frame { flex: 1; width: 100%; border: none; background: #fff; overflow-x: hidden; overflow-y: auto; }
+/* The frame and its veil share one box, so the spinner sits over the empty
+   white the capture is still filling in, not over the modal header. */
+.pane-modal-stage { position: relative; flex: 1; min-height: 0; display: flex; }
 
 /* ---------- responsive ----------
    Four deliberate steps rather than a soup of one-off tweaks:
@@ -1149,13 +1430,15 @@ a { color: var(--accent); }
   .workspace { grid-template-columns: minmax(0, 1fr); }
   .viewer-panes { grid-template-columns: 1fr; }
   .side-column { position: static; height: auto; max-height: none; }
-  .changes-list { overflow-y: visible; }
+  /* The list is the page's to scroll at this width, so it has no bar of its
+     own to make room for and the cards go back to the column's full width. */
+  .changes-list { overflow-y: visible; padding-right: 0; }
   .hero { padding: 28px 20px 32px; }
   .hero-inner { padding: 48px 28px 40px; }
   .hero h1 { font-size: 36px; }
   .hero h1 br { display: none; }
-  .topbar { padding: 20px 24px 10px; flex-direction: column; align-items: flex-start; gap: 4px; }
-  .topbar-end { width: 100%; justify-content: space-between; gap: 14px; }
+  .topbar { padding: 18px 24px; gap: 16px; }
+  .topnav-link { padding: 9px 16px; }
   .url-form { flex-direction: column; border-radius: var(--radius); padding: 10px; }
   .url-form input { padding: 10px 8px; }
   .primary-btn, .url-form button { width: 100%; }
@@ -1163,19 +1446,20 @@ a { color: var(--accent); }
   .timeline-header { flex-direction: column; align-items: stretch; gap: 16px; }
   .timeline-header-actions { justify-content: flex-start; gap: 12px; flex-wrap: wrap; }
   .timeline-header h2 { font-size: 24px; }
-  .change-counts { gap: 14px; flex-wrap: wrap; }
+  .change-counts { gap: 4px; flex-wrap: wrap; }
 }
 
 @media (max-width: 700px) {
-  .topbar { padding: 16px 16px 10px; }
-  .tagline { font-size: 12.5px; padding-left: 16px; }
+  /* the header stacks: the wordmark, then the switch across the full width,
+     where two thumbs can reach both halves of it */
+  .topbar { padding: 14px 16px; flex-direction: column; align-items: stretch; gap: 12px; }
+  .topnav { width: 100%; }
+  .topnav-link { flex: 1 1 0; justify-content: center; padding: 9px 14px; }
   .hero { padding: 18px 14px 24px; }
   .hero-inner { padding: 36px 20px 32px; }
   .hero-eyebrow { margin-bottom: 18px; }
   .hero h1 { font-size: 29px; margin-bottom: 16px; }
   .hero-sub { font-size: 15px; margin-bottom: 26px; }
-  .hero-alt { margin-top: 26px; gap: 14px; }
-  .hero-alt-line { max-width: 60px; }
   .timeline-section { padding: 4px 16px 28px; }
   .timeline-header { padding: 0; }
   .timeline-track-wrap { padding: 20px 14px 12px; }
@@ -1193,7 +1477,6 @@ a { color: var(--accent); }
   .notes-area { min-height: 220px; padding: 14px; }
   .site-footer { padding: 24px 18px 32px; }
   .pane-modal-panel { width: 100vw; height: 100vh; border-radius: 0; }
-  .topbar-back { padding: 6px 13px 6px 11px; }
 }
 
 @media (max-width: 560px) {
@@ -1205,9 +1488,10 @@ a { color: var(--accent); }
   .side-tab { font-size: 12.5px; }
   .pane-tag { display: none; }
   .viewer-toolbar { gap: 10px; }
-  .change-counts { font-size: 11.5px; gap: 12px; }
+  .change-counts { font-size: 11.5px; gap: 4px; }
   .change-tooltip { width: min(92vw, 340px); }
   .example-chips { gap: 6px; }
+  .topnav-link { padding: 8px 11px; font-size: 12.5px; gap: 7px; }
 }
 
 @media (max-width: 380px) {
@@ -1222,23 +1506,41 @@ a { color: var(--accent); }
 .change-tooltip {
   position: fixed;
   z-index: 110;
-  width: 340px;
-  max-height: 420px;
+  width: 360px;
+  max-height: 480px;
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow-panel);
-  padding: 14px 16px;
+  padding: 16px 18px;
   animation: rise 0.12s ease both;
   pointer-events: auto;
   box-sizing: border-box;
 }
 .change-tooltip[hidden] { display: none; }
 
-.change-tooltip-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+/* The two plain-language lines in the card: what the page draws instead of a
+   hidden change, and where the page keeps it. Both are ordinary sentences in
+   the card's own voice - no rule down the side, no bold lead-in - so they read
+   as part of the entry rather than as a callout pasted into it. */
+.change-detail-standin,
+.change-detail-howto {
+  margin: 0 0 8px;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.change-detail-standin[hidden],
+.change-detail-howto[hidden] { display: none; }
+
+.change-tooltip-header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 .change-tag { color: var(--ink-soft); font-size: 12px; }
+/* The plain-words line under the header ("An image.", "The browser tab
+   title."): the first thing the eye reads, so it gets room and a softer
+   voice than the details below it. */
+#changeDetailWhat { font-size: 13px; color: var(--ink-soft); margin: 0 0 10px; }
 
 .change-badge {
   display: inline-flex;
@@ -1255,7 +1557,7 @@ a { color: var(--accent); }
 .change-badge.removed { background: var(--removed-soft); color: var(--removed); }
 .change-badge.changed { background: var(--changed-soft); color: var(--changed); }
 
-.change-detail-path { color: var(--ink-faint); font-size: 11px; margin: 0 0 10px; word-break: break-word; }
+.change-detail-path { color: var(--ink-faint); font-size: 10.5px; margin: 0 0 10px; word-break: break-word; opacity: 0.85; }
 .change-detail-path[hidden] { display: none; }
 
 .change-note-list {
@@ -1324,6 +1626,17 @@ a { color: var(--accent); }
 .change-detail-block.before .change-detail-label { color: var(--removed); }
 .change-detail-block.after .change-detail-label { color: var(--added); }
 .change-detail-block p { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--ink); white-space: pre-wrap; word-break: break-word; }
+/* The note under a text block, currently, the one that says a leaf is still on
+   the page but has moved. Muted and set apart, because it explains the entry
+   rather than quoting the page the way the paragraph above it does. */
+.change-detail-block p.change-detail-note {
+  margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line-strong);
+  color: var(--ink-soft); font-size: 12px; white-space: normal;
+}
+.change-detail-block p.change-detail-note code {
+  font-family: var(--mono); font-size: 11px;
+  background: var(--panel-sunken); padding: 0 3px; border-radius: 3px;
+}
 .change-detail-block[hidden] { display: none; }
 .change-detail-arrow { text-align: center; color: var(--ink-faint); font-size: 12px; line-height: 1; margin: 2px 0; }
 .change-detail-arrow[hidden] { display: none; }
@@ -1349,6 +1662,103 @@ a { color: var(--accent); }
 #changeDetailTraceBtn { font-size: 11.5px; padding: 0; }
 #changeDetailTraceBtn[hidden] { display: none; }
 
+/* The second line under a picture's sidebar row ("image file changed, see
+   details"). Small and muted: it explains the row rather than quoting the
+   page, the way the detail note under a text block does. */
+.change-sub {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-top: 2px;
+}
+
+/* Side-by-side thumbnails in the tooltip's image section: the change you can
+   see, next to the sentence describing it. A shot that fails to load removes
+   itself in JS, so no broken-image icon ever stands in for the picture. */
+.change-media-preview { display: flex; gap: 12px; margin-top: 10px; }
+.change-media-preview[hidden] { display: none; }
+.change-media-shot { position: relative; margin: 0; flex: 1 1 0; min-width: 0; }
+.change-media-shot img {
+  display: block;
+  width: 100%;
+  min-height: 140px;
+  max-height: 170px;
+  object-fit: contain;
+  background: var(--panel-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  /* Held back until it is really here, so a picture still arriving never
+     stands as a collapsed line: the reserved box with the spinner below is
+     what reads as its place, and the frame fades up onto it. */
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.change-media-shot.is-ready img { opacity: 1; }
+/* The wait state: the same ring spinner the panes use, centred in the
+   reserved box, standing until the frame it waits for marks itself ready. */
+.change-media-shot:not(.is-ready)::before {
+  content: "";
+  position: absolute;
+  left: calc(50% - 11px);
+  top: 59px;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.change-media-shot:not(.is-ready)::after {
+  content: "Loading image\u2026";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 90px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+/* Thumbnails wear their side's color, the way the Before/After text boxes
+   do: red was, green is. */
+.change-media-shot.before img { border-color: var(--removed); background: var(--removed-soft); }
+.change-media-shot.after img { border-color: var(--added); background: var(--added-soft); }
+.change-media-files { display: flex; flex-direction: column; gap: 4px; margin: 10px 0 0; }
+.change-media-files .change-detail-block { margin-bottom: 0; }
+.change-media-files .change-detail-block p { font-family: var(--mono); font-size: 11.5px; }
+/* Caption as a Before/After pill plus the file name: the pill carries the
+   side in color (red was, green is), the name sits under it in quiet mono
+   so two same-looking thumbnails stay legible. */
+.change-media-shot figcaption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin-top: 6px;
+  text-align: center;
+}
+.shot-side {
+  display: inline-block;
+  font-family: var(--sans);
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 10px;
+  border-radius: 100px;
+}
+.shot-side.before { background: var(--removed-soft); color: var(--removed); }
+.shot-side.after { background: var(--added-soft); color: var(--added); }
+.shot-file {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  word-break: break-all;
+  line-height: 1.4;
+}
+
 
 /* ---------- accessibility ---------- */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -1363,12 +1773,12 @@ a { color: var(--accent); }
    Site dashboard
 
    Deliberately the plainest surface in the project. The trace page is the
-   editorial one — big italic serif, stamped rings, ornamental corners. The
+   editorial one, big italic serif, stamped rings, ornamental corners. The
    dashboard is where you read numbers, so every piece of decoration is gone:
    no gradients, no accent bands, no shadows, no rules inside a card, and not
    one line of italic serif. A single sans family carries every label and
    every heading; the mono face is reserved for figures that need to line up
-   in columns. Colour belongs to the data — added, removed, changed — and
+   in columns. Colour belongs to the data, added, removed, changed, and
    nothing else in here is allowed to be coloured at all.
 
    Charts are drawn in the width they are given. Each SVG viewBox is measured
@@ -1478,8 +1888,8 @@ a { color: var(--accent); }
 .dash-range-row { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
 .dash-range-row[hidden] { display: none; }
 /* The two dates hold a comfortable width instead of stretching to fill the
-   panel — a 600px-wide box holding "Sep 5, 2025" only makes the pair feel
-   unmoored — and Reset is pushed to the far end, flush with the card edge
+   panel, a 600px-wide box holding "Sep 5, 2025" only makes the pair feel
+   unmoored, and Reset is pushed to the far end, flush with the card edge
    below it. Never wraps: a lone Reset on a line of its own, right-aligned and
    a screen away from the dates it acts on, is worse than narrower dates. The
    row stacks wholesale below 700px instead. */
@@ -1551,8 +1961,8 @@ a { color: var(--accent); }
 .dash-gridline { stroke: var(--line); stroke-width: 1; opacity: 0.7; }
 
 /* ---------- shared: labeled-bar rows, used by composition, tag
-   breakdown and gap breakdown — one consistent grid so every
-   "swatch — label — bar — number" row in the dashboard lines up the same
+   breakdown and gap breakdown, one consistent grid so every
+   "swatch, label, bar, number" row in the dashboard lines up the same
    way, with the number right-aligned so the figures form a column ---------- */
 .dash-row-list { display: flex; flex-direction: column; gap: 13px; }
 .dash-row { display: grid; grid-template-columns: 148px minmax(0, 1fr) 70px; align-items: center; gap: 14px; }
@@ -1696,10 +2106,10 @@ a { color: var(--accent); }
 }
 
 /* ---------------------------------------------------------------------
-   Palimpsest — Timelapse: keeping the film
+   Palimpsest, Timelapse: keeping the film
    The download uses the same parts as the rest of the film: a card, a
    hairline, one accent-filled control. The only new object is the recording
-   row, and it lives under the stage on purpose — it is outside the frame the
+   row, and it lives under the stage on purpose, it is outside the frame the
    recorder cuts, so the file never contains the controls that made it.
 ========================================================================== */
 
@@ -1797,7 +2207,6 @@ a { color: var(--accent); }
 
 /* The tab capture that feeds the video. It is never seen; it only has to be in
    the document for the browser to play a MediaStream into it. */
-.tl-export-video { position: fixed; left: -10000px; top: 0; width: 2px; height: 2px; }
 
 /* ---------------------------------------------------------------------
    Palimpsest: Claim records
@@ -2045,3 +2454,16 @@ a { color: var(--accent); }
   .cw-cat-row { grid-template-columns: 120px 1fr 90px; }
   .cw-bar-row { grid-template-columns: 120px 1fr 30px; }
 }
+
+/* ---------------------------------------------------------------------
+   Palimpsest: Settlement research
+   The page is a shell for now: the same card, the same hairline, the same
+   form, and a reading that is not built yet. Nothing else is here on purpose.
+========================================================================== */
+
+.settlement-page .topbar { gap: 18px; }
+
+/* The eyebrow is the one place the page states what it is. It stays in the
+   ink tone rather than the accent one: this is a template, not a finding. */
+.hero-eyebrow-quiet { background: var(--panel-sunken); color: var(--ink-soft); }
+.hero-eyebrow-quiet::before { background: var(--ink-faint); }

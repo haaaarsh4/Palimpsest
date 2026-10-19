@@ -17,7 +17,7 @@
 // with nothing left to fetch. Press them the other way round and it works the
 // same, because the record is stored rather than re-read.
 //
-// The mock has to return real documents, not just counts — a timelapse whose
+// The mock has to return real documents, not just counts, a timelapse whose
 // frames are all the same white rectangle tells you nothing about whether the
 // cross-fade works. So each mock snapshot generates a page in the visual
 // idiom of its era: a table-and-Times layout in 1999, centred fixed-width
@@ -85,7 +85,7 @@ function buildSnapshots(target) {
 }
 
 // The record the harness films. The real thing is 737 captures, which at the
-// Archive's own rate is a quarter of an hour of waiting — fine for a real
+// Archive's own rate is a quarter of an hour of waiting, fine for a real
 // trace, useless for iterating. Override it to rehearse a short record or a
 // different one:
 //
@@ -108,7 +108,7 @@ function mockPage(year, seed) {
   const pick = (arr) => arr[Math.floor(rand() * arr.length)];
 
   const headlines = [
-    'Settlement.ORG', 'Settlement', 'Settlement — Rethinking the Commute',
+    'Settlement.ORG', 'Settlement', 'Settlement, Rethinking the Commute',
     'Settlement', 'Settlement', 'Settlement', 'Settlement',
   ];
   const nav = ['About', 'Projects', 'People', 'News', 'Contact', 'Archive', 'Search'];
@@ -275,7 +275,7 @@ const STUB = `
 const PREVIEW_SNAPSHOTS = ${JSON.stringify(SNAPSHOTS)};
 
 // mockPage and mockCounts are serialised in below and both draw from this, so
-// it has to travel with them — the harness runs in the page, not in Node.
+// it has to travel with them, the harness runs in the page, not in Node.
 ${mulberry32.toString()}
 
 const state = {

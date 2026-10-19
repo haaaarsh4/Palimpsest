@@ -5,8 +5,8 @@
 // instead of one pair of snapshots at a time.
 //
 // It reads the record rather than fetching it. public/archiveStore.js owns
-// the one walk of a site's history — every adjacent pair of captures, the
-// pages themselves, and what changed at each step — and this file asks for
+// the one walk of a site's history, every adjacent pair of captures, the
+// pages themselves, and what changed at each step, and this file asks for
 // that reading and then does nothing but draw it. The timelapse asks for the
 // same reading. Whoever opens first pays for it, the other one opens on
 // whatever is already stored, and an interrupted walk resumes rather than
@@ -23,7 +23,7 @@
 //
 //   1. No hand-positioned drag controls. The "focus range" is two plain
 //      <select> elements. A <select> cannot overlap its own label or
-//      drift out of alignment with a track, because there is no track —
+//      drift out of alignment with a track, because there is no track ,
 //      the browser owns its layout completely.
 //
 //   2. No per-fetch re-rendering. Every chart is drawn exactly once, only
@@ -34,7 +34,7 @@
 //
 // A word on honesty: the Wayback Machine's crawler visits a site on its
 // own schedule, not the site's. A gap in coverage means the crawler
-// didn't stop by — it says nothing about whether the site changed in
+// didn't stop by, it says nothing about whether the site changed in
 // between. A large diff between two captures is "the difference between
 // these two captures," never "what happened on this date." And because
 // every adjacent pair is now analyzed, no bar spans a snapshot that was
@@ -44,7 +44,7 @@
 // `state`, `el`, `formatDate`, `escapeHtml`, `positionHandles`, and
 // `loadDiff` from that file rather than duplicating them.
 
-// Bars are filled with the CSS custom properties themselves — flat, one ink
+// Bars are filled with the CSS custom properties themselves, flat, one ink
 // per series, no gradients. Colour in this dashboard means added, removed or
 // changed, and every other mark is neutral.
 const SERIES_STACK = ['removed', 'changed', 'added']; // stacked bottom-up
@@ -60,7 +60,7 @@ function monthYear(iso) {
 }
 
 // An axis people can read: whole ticks, and a top of the scale that lands on
-// the last one — 0 / 100 / 200 / 300 / 400, not 0 / 78 / 155 / 233 with a
+// the last one, 0 / 100 / 200 / 300 / 400, not 0 / 78 / 155 / 233 with a
 // 310 the axis never claims to reach. If the tallest bar runs past the highest
 // number printed on the axis, the axis is not telling you the scale.
 function niceScale(max, targetTicks) {
@@ -74,7 +74,7 @@ function niceScale(max, targetTicks) {
   return { step, top: Math.max(step, Math.ceil(max / step) * step) };
 }
 
-// A rectangle with only its top corners rounded — how a stack of bars should
+// A rectangle with only its top corners rounded, how a stack of bars should
 // end. Emitted without a fill so the caller can point it at a gradient.
 function topRoundedRect(x, y, w, h, r) {
   const rr = Math.max(0, Math.min(r, w / 2, h));
@@ -115,8 +115,8 @@ const DASH = {
 };
 
 // The masthead's one line of prose, and the caption over the chart. The scope
-// is the same either way — every capture on file, every adjacent pair between
-// them — so only the tense changes, and it changes when the reading lands
+// is the same either way, every capture on file, every adjacent pair between
+// them, so only the tense changes, and it changes when the reading lands
 // rather than when the modal opens.
 function describeAnalysis(done) {
   const n = state.snapshots.length;
@@ -128,7 +128,7 @@ function describeAnalysis(done) {
 
 // The dashboard presents one fixed reading of the record: every adjacent pair
 // of captures, all three series drawn. There is no resolution switch, no
-// grouping switch and no series filter — what is on screen is the whole
+// grouping switch and no series filter, what is on screen is the whole
 // picture, and the only thing you can change is which stretch of it you are
 // looking at.
 
@@ -154,7 +154,7 @@ function openDashboard() {
     DASH.rangeHi = null;
   }
 
-  renderCadence();     // needs only state.snapshots — instant, no fetch required
+  renderCadence();     // needs only state.snapshots, instant, no fetch required
 
   // If this record was read a moment ago in this same tab, it is still in
   // memory. Draw it straight away rather than flashing the loading skeletons
@@ -282,11 +282,42 @@ async function startAnalysis() {
   // running if there is one, and returns what it has in a few milliseconds if
   // it is. Opening the dashboard before the timelapse therefore leaves the
   // timelapse nothing to do, and the two never walk the same history twice.
-  const record = await arEnsure(url, snaps, (p) => {
+  let record;
+  // The numbers land long after the pages, pair by pair as the server
+  // measures them. Drawing them as they arrive (throttled) turns a minutes-
+  // long skeleton into a chart that fills itself in; the final pass below
+  // still draws the complete record exactly once.
+  let lastProgressDraw = 0;
+  try {
+    record = await arEnsure(url, snaps, (p) => {
+      if (DASH.gen !== myGen) return;
+      DASH.completed = p.done;
+      DASH.totalPairs = p.total || DASH.totalPairs;
+      updateLoadingProgressText();
+      if (p.stage === 'numbers' && p.counts) {
+        const now = Date.now();
+        if (now - lastProgressDraw > 1000) {
+          lastProgressDraw = now;
+          try {
+            applyRecord({ counts: p.counts, totals: p.totals || [], tags: p.tags || [] });
+            describeAnalysis(false);
+            renderKpis();
+            renderCharts();
+          } catch (_) { /* the final pass still draws everything */ }
+        }
+      }
+    });
+  } catch (err) {
+    // A reading that ends in an error has to end on the screen too. Left
+    // unhandled it left four spinners over a record nobody was reading.
     if (DASH.gen !== myGen) return;
-    DASH.completed = p.done;
-    updateLoadingProgressText();
-  });
+    DASH.running = false;
+    el('dashActivityChart').innerHTML = loadingPanelHTML('The record could not be read. Close this and open it again.');
+    el('dashCompositionChart').innerHTML = loadingPanelHTML('Nothing to draw.');
+    el('dashTagChart').innerHTML = loadingPanelHTML('Nothing to draw.');
+    el('dashLeaderboard').innerHTML = loadingPanelHTML('Nothing to record.');
+    return;
+  }
   if (DASH.gen !== myGen) return;   // superseded by a newer reading
   DASH.running = false;
 
@@ -367,10 +398,10 @@ function kpiCard(label, value, sub, opts = {}) {
 }
 
 // The longest gap needs nothing but the snapshot list, so it is known before a
-// single diff comes back — it renders at full strength while the rest of the
+// single diff comes back, it renders at full strength while the rest of the
 // strip is still counting itself up.
 function gapKpi(gap) {
-  if (gap.days < 0) return kpiCard('Longest capture gap', '\u2014', '', { subHtml: '' });
+  if (gap.days < 0) return kpiCard('Longest capture gap', '\u2026', '', { subHtml: '' });
   return kpiCard('Longest capture gap', fmt(gap.days), '', {
     unit: 'days',
     subHtml: `${escapeHtml(monthYear(gap.fromDate))} \u2192 ${escapeHtml(monthYear(gap.toDate))}`,
@@ -386,13 +417,13 @@ function renderKpiSkeleton() {
     kpiCard('History span', humanDuration(first, last), '', {
       subHtml: `${escapeHtml(monthYear(first))} \u2192 ${escapeHtml(monthYear(last))}`,
     }),
-    kpiCard('Total changes', '\u2014', '', { accent: true, pending: true, subHtml: 'Calculating\u2026' }),
+    kpiCard('Total changes', '\u2026', '', { accent: true, pending: true, subHtml: 'Calculating\u2026' }),
     gapKpi(longestCaptureGap()),
-    kpiCard('Largest difference', '\u2014', '', { pending: true, subHtml: 'Calculating\u2026' }),
+    kpiCard('Largest difference', '\u2026', '', { pending: true, subHtml: 'Calculating\u2026' }),
   ].join('');
 }
 
-// The longest stretch between two REAL, consecutive archived snapshots —
+// The longest stretch between two REAL, consecutive archived snapshots ,
 // about crawler coverage, not site activity. The site may well have
 // changed several times in a gap like this; the crawler just never
 // caught it.
@@ -540,7 +571,7 @@ function renderActivityChart(intervals) {
 
   // Date labels are placed greedily and dropped when they would collide. The
   // last bar always keeps its date, because "when does this record end" is the
-  // one question an axis must answer — it displaces its neighbour instead of
+  // one question an axis must answer, it displaces its neighbour instead of
   // being dropped itself.
   const labelEvery = Math.max(1, Math.ceil(n / 8));
   const marks = [];
@@ -689,7 +720,7 @@ function renderTagChart(intervals) {
 }
 
 // ---------------------------------------------------------------- archive coverage (from
-// state.snapshots alone — no diff fetch needed, so this renders instantly)
+// state.snapshots alone, no diff fetch needed, so this renders instantly)
 function renderCadence() {
   const wrap = el('dashCadenceChart');
   const snaps = state.snapshots;

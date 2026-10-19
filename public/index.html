@@ -3,537 +3,1106 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Palimpsest: watch a website change over time</title>
+<!-- The sections collapse into a menu on a narrow window, and the class that
+     says so is set before the page is parsed, so the bar is never painted with
+     four labels that then become a button. Without it the row stands as it
+     always has (see the menu block in theme.css): the button is an addition to
+     the page, never a condition of it. -->
+<script>document.documentElement.classList.add('nav-js');</script>
+<!-- One document handing to the next without a white blink: same-origin
+     navigations crossfade instead of flashing, so leaving a section for the
+     front page (or back) feels like one running page rather than a restart.
+     Browsers without it ignore the line and navigate as before. -->
+<meta name="view-transition" content="same-origin" />
+<title>Palimpsest: see what a website used to say</title>
+<!-- THE FRONT PAGE OPENS AT ITS TOP, AND NEVER A FEW PIXELS OFF IT.
+
+     This page is a scroll-driven one: the opening screen is pinned and the
+     word's own place is written from the reader's position in it, so a
+     scrollbar a few pixels from zero paints a hero a few pixels from where it
+     belongs. The browser then finishes restoring the position it remembered
+     from the last visit and the hero travels the rest of the way - which is
+     exactly what a return to this page looked like: the word arriving a little
+     low, and then moving up into place.
+
+     Two things had to go, and both are the browser's own good behaviour on any
+     other site: the restored position (this page has one that it is meant to be
+     met at, and that is the top) and the smooth-scroll that the restore
+     inherits from the stylesheet (html { scroll-behavior: smooth } in
+     styles.css), which turns a three-pixel correction into a visible journey.
+     So the restore is taken over here, and asked for the two cases it is
+     wanted in - a refresh, and a step back to this page - and the two cases it
+     is not, which are every arrival from the rest of the site: those open at
+     the top.
+
+     The decision is made here, before the stylesheet is even parsed, and the
+     correction is made by the last script in the document (see the note at the
+     foot of the page) - both of them inside the parse, so neither the browser
+     nor the reader sees a frame between the two. The place the reader was is
+     remembered on the way out, and the smoothing is lifted for exactly the one
+     correction this makes. -->
+<script>
+  (function () {
+    var KEY = 'palimpsest-home-scroll';
+    var store = null;
+    try { store = window.sessionStorage; } catch (_) { /* private mode: no memory, and none needed */ }
+    var navType = 'navigate';
+    try {
+      var entries = window.performance && window.performance.getEntriesByType &&
+        window.performance.getEntriesByType('navigation');
+      if (entries && entries.length && entries[0].type) navType = entries[0].type;
+    } catch (_) {}
+    var wanted = 0;
+    if (store && (navType === 'reload' || navType === 'back_forward')) {
+      var kept = parseFloat(store.getItem(KEY));
+      if (kept > 0) wanted = kept;
+    }
+    try {
+      if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual';
+    } catch (_) { /* an old browser keeps its own behaviour; nothing to undo */ }
+    // The number the end of the document puts back, once there is a page tall
+    // enough to hold it. Read there, not here: at this point the body has not
+    // been parsed, so the document has no height for a scroll to land on.
+    window.palimpsestScroll = wanted;
+    // And the place is kept as the reader reads, so there is something to come
+    // back to: written when the scroll has been still for a moment rather than
+    // on every frame of it, and once more on the way out.
+    var save = function () {
+      try { store && store.setItem(KEY, String(Math.round(window.scrollY))); } catch (_) {}
+    };
+    var pending = 0;
+    window.addEventListener('scroll', function () {
+      if (pending) return;
+      pending = window.setTimeout(function () { pending = 0; save(); }, 200);
+    }, { passive: true });
+    window.addEventListener('pagehide', save);
+  })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- The display face is not fetched from the font host at all. It is the face
+     the giant word is set in, and its widths are what place every mark beside
+     it, so it is served from this origin and preloaded here: the word is then
+     painted in the face it keeps, from the first paint, and there is no wrong
+     state to move out of. Oswald is a variable font, so one pair of files
+     carries every weight (see the @font-face notes in theme.css). Everything
+     else on the page still comes from the font host and still swaps. -->
+<link rel="preload" href="/fonts/oswald-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
 <link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16" />
 <link rel="icon" href="/favicon.ico" sizes="any" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
-<link rel="stylesheet" href="/styles.css" />
-</head>
-<body>
+<link rel="stylesheet" href="/styles.css?v=5" />
+<link rel="stylesheet" href="/theme.css?v=40" />
+<link rel="preload" as="image" href="/media/desk-machine.png?v=3" fetchpriority="high" />
+<noscript><style>
+.stage .media-slot.rig-wait { opacity: 1; transform: translate(-50%, -50%); }
+.stage .media-slot.rig-wait::after { display: none; }
+@media (max-width: 900px) { .stage .media-slot.rig-wait { transform: none; } }
+</style></noscript>
+<!-- The hold before the first paint.
 
-  <div class="page-main">
-  <header class="topbar">
-    <div class="wordmark">
-      <span class="wordmark-text">Palimpsest</span>
-    </div>
-    <span class="tagline">the old text, still visible under the new</span>
+     The page is written in rather than simply printed: theme.js deals every
+     marked block out into pieces and hides them under their own lines, and
+     then plays them in one after another. That arming is the first thing the
+     script does, but the script is an external file and `defer` at the foot of
+     the page: the browser has already painted the finished page by the time it
+     runs, so the reader got the whole opening screen for a moment, then watched
+     it disappear and be written in again, which is exactly what it looked like.
+
+     This is the one line that cannot wait for the script, so it does not: it
+     runs here, in the head, in the same turn the page is parsed and long before
+     the first paint, and it says to the stylesheet "the pieces are about to be
+     armed, hold them". theme.js takes the class off again in the same breath as
+     it arms the blocks (see the end of its arrivals), so the hold is never on
+     the page while the sequence is running; the two ways out below it are for
+     the script that never arrives, because a page whose words are hidden for
+     good is worse than one that flickers.
+
+     A reader with no script never gets the class and never needs it: the whole
+     sentence is in the page already, where it belongs.
+
+     The script below arms that hold only when the opening will actually
+     play; a return from another page in the same session skips the sequence,
+     so arming it there would blank the page until the deferred script
+     arrives. -->
+<script>
+  // The hold stays on until theme.js itself takes it off in the same breath
+  // as it arms the blocks — deliberately nothing else. An earlier version
+  // also let go on window load, and load does not wait for a deferred
+  // script that is still arriving: the page was released unarmed, showed
+  // itself complete, and was then hidden and written in again, which is the
+  // flash. The stylesheet's own backstop is the only other way out.
+  (function () {
+    try {
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      var navType = 'reload';
+      try {
+        var entries = window.performance && window.performance.getEntriesByType &&
+          window.performance.getEntriesByType('navigation');
+        if (entries && entries.length && entries[0].type) navType = entries[0].type;
+      } catch (_) {}
+      var seen = false;
+      try { seen = !!window.sessionStorage.getItem('palimpsest-home-seen'); } catch (_) {}
+      // A return skips the WRITING: no hold, no dealing out, the words are
+      // simply there, so the page paints as the reader left it instead of
+      // writing itself in twice. The machine still arrives, and it arrives with
+      // the same rise and dissolve a first visit gives it - that is the one move
+      // a return has, and the belt at the head of the page waits for it before
+      // it sets off (see theme.js and the skip-intro note in theme.css).
+      if (seen && (navType === 'navigate' || navType === 'back_forward')) {
+        document.documentElement.classList.add('skip-intro');
+        // Nothing else is held: the display face is served from this origin and
+        // preloaded, so the belt is painted standing on the return as it is on
+        // a first visit, and only the machine arrives (see the note where the
+        // hold used to be in theme.css).
+        return;
+      }
+    } catch (_) {}
+    document.documentElement.classList.add('rv-armed');
+    // And no scrollbar until the opening is over: the bar appears only once
+    // the writing has finished and the machine has landed (theme.js takes
+    // this off), never over the blank hold or the half-written hero.
+    document.documentElement.classList.add('intro-hide-scroll');
+  })();
+</script>
+</head>
+<body class="home">
+
+<div class="paper-frame">
+
+  <!-- The head is one sticky row, because it is the whole navigation this site
+       has: no menu behind a button, so it has to be where the reader already
+       is. The wordmark opens the row and is the way home, which is why there
+       is no Home in the list, and the four sections close it up against the
+       right-hand edge. -->
+  <header class="site-head">
+    <nav class="site-nav" aria-label="Palimpsest sections">
+      <a class="brand" href="/" aria-label="Palimpsest, front page">
+        <span class="brand-word">Palimpsest</span>
+      </a>
+
+      <!-- The button and the row are two states of ONE list. The links are
+           not copied into a menu: the same four anchors are the row on a wide
+           window and the panel under the bar on a narrow one, so the page a
+           reader is on, and the address they typed (theme.js carries it into
+           every link), are written in one place. The button comes before the
+           list so the keyboard meets it before what it opens. -->
+      <button class="nav-toggle" type="button" id="navToggle" aria-expanded="false" aria-controls="navMenu">
+        <span class="nav-bars" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="visually-hidden">Sections</span>
+      </button>
+      <div class="nav-links" id="navMenu">
+        <a class="nav-link" href="/compare"><span class="nav-text"><span class="nav-full">Compare snapshots</span><span class="nav-short">Compare</span></span></a>
+        <a class="nav-link" href="/claims"><span class="nav-text">Claims</span></a>
+        <a class="nav-link" href="/settlement"><span class="nav-text">Settlement</span></a>
+        <a class="nav-link" href="/sustainability"><span class="nav-text">Sustainability</span></a>
+      </div>
+    </nav>
   </header>
 
-  <section class="hero">
-    <div class="hero-inner">
-      <span class="hero-eyebrow">Powered by the Wayback Machine</span>
-      <h1>See what a website <br />used to say.</h1>
-      <p class="hero-sub">Enter any address. Palimpsest pulls its history from the Wayback Machine, lines up two moments in time side by side, and shows you exactly what moved, what vanished, and what showed up.</p>
+  <!-- THE HEAD'S HEIGHT, TAKEN AS SOON AS THE HEAD EXISTS.
 
-      <form id="urlForm" class="url-form" autocomplete="off">
-        <input id="urlInput" type="text" placeholder="e.g. stripe.com, nytimes.com, apple.com/mac" required />
-        <button id="traceBtn" type="submit">
-          <span id="traceBtnText">Trace this site</span>
-        </button>
-      </form>
+       Everything below this line is laid out from --head: the opening section
+       starts at the top of the page and the head stands over it, so its
+       margin-top and the pinned row's padding are both that number. The
+       stylesheet carries the arithmetic for the ordinary one-row bar (see the
+       note at --head there), and this is the same measurement theme.js takes
+       later, taken here for the two cases the arithmetic cannot know: a
+       window narrow enough that the labels wrap under the wordmark, and any
+       face whose line box is not the root's.
 
-      <div class="example-chips">
-        <span class="example-label">or try</span>
-        <button type="button" class="chip" data-url="apple.com">apple.com</button>
-        <button type="button" class="chip" data-url="nytimes.com">nytimes.com</button>
-        <button type="button" class="chip" data-url="airbnb.com">airbnb.com</button>
+       It stands HERE, in the body, right after the header, and that placement
+       is the whole of the fix for the jump the reader saw on arriving home.
+       It used to stand in the middle of the hero, which is a parser-blocking
+       script and therefore ran before the paint of everything after it - but
+       not before the paint of everything BEFORE it. On a slow document the
+       browser painted the head and the top of the hero while the parser was
+       still reading towards that script, so the opening screen was drawn from
+       the stylesheet's fallback and then moved when the script ran. Nothing
+       below this point has been parsed yet, so nothing can be painted with the
+       wrong number: the first frame the hero ever has is the measured one. -->
+  <script>
+  (function () {
+    var head = document.querySelector('.site-head');
+    // The rect's height rather than offsetHeight's: the bar's line box is
+    // 36.8px at the widest, and a rounded 37 is a fifth of a pixel of the
+    // opening screen standing in the wrong place for as long as the page is
+    // open. The stylesheet's own arithmetic is exact, so the measurement has
+    // to be at least as exact as what it replaces.
+    var h = head ? head.getBoundingClientRect().height : 0;
+    if (h) document.documentElement.style.setProperty('--head', h.toFixed(2) + 'px');
+  })();
+  </script>
+
+  <main class="home-main">    <!-- ------------------------------------------------------------- opening
+         The reference's opening screen, kept whole: one enormous word across
+         the sheet, the line of explanation under it, and three columns fenced
+         by corner brackets with the film in the middle of them, what this is
+         on the left, what it gives back on the right.
+
+         The section is two and a half screens tall and the arrangement inside
+         it is stuck to the window, so what the reader's scroll does is not
+         pass the block by but grow the film out of it. At the top of the
+         section the film is a panel standing in the middle of the row; by the
+         bottom of it the film is the whole screen and the row has stepped
+         aside. theme.js writes that progress onto the section as --p and
+         theme.css turns it into size, so there is one number behind all of it.
+    -->
+    <section class="stage" id="stage">
+      <div class="stage-pin">
+        <h1 class="visually-hidden">Palimpsest: see what a website used to say</h1>
+
+        <!-- The word, on a belt. It is not decoration: pages moving while
+             nobody is watching is the thing this site is about, and a line
+             that will not hold still says that in the time it takes to read
+             it. The belt turns by itself at the reference's own speed and
+             nothing else drives it, not the reader's scroll, which used to be
+             added on top of the drift and made the word look like something
+             being dragged sideways as they moved down the page. All four
+             copies carry the same reveal, one per letter, so the belt is
+             written in as a single word rather than four times over, and they
+             carry it as one group, because the arrivals below are a sequence
+             and four turns on the same word would spend four of them.
+
+             The slant beside each copy comes up with the word rather than
+             standing there from the first frame: it is the reference's own mark
+             and it belongs to the word, so theme.js gives it the word's turn ,
+             see .banner-mark in theme.css. -->
+        <div class="banner" aria-hidden="true">
+          <div class="banner-track">
+            <span class="banner-word">Palimpsest</span>
+            <span class="banner-mark"><svg viewBox="0 0 62 100" preserveAspectRatio="none"><path d="M19 0 L62 0 L43 100 L0 100 Z" fill="#f2e5d8" stroke="#17120e" stroke-width="1.3" vector-effect="non-scaling-stroke"/></svg></span>
+            <span class="banner-word">Palimpsest</span>
+            <span class="banner-mark"><svg viewBox="0 0 62 100" preserveAspectRatio="none"><path d="M19 0 L62 0 L43 100 L0 100 Z" fill="#f2e5d8" stroke="#17120e" stroke-width="1.3" vector-effect="non-scaling-stroke"/></svg></span>
+            <span class="banner-word">Palimpsest</span>
+            <span class="banner-mark"><svg viewBox="0 0 62 100" preserveAspectRatio="none"><path d="M19 0 L62 0 L43 100 L0 100 Z" fill="#f2e5d8" stroke="#17120e" stroke-width="1.3" vector-effect="non-scaling-stroke"/></svg></span>
+            <span class="banner-word">Palimpsest</span>
+            <span class="banner-mark"><svg viewBox="0 0 62 100" preserveAspectRatio="none"><path d="M19 0 L62 0 L43 100 L0 100 Z" fill="#f2e5d8" stroke="#17120e" stroke-width="1.3" vector-effect="non-scaling-stroke"/></svg></span>
+          </div>
+        </div>
+
+        <p class="hero-kicker" data-reveal="words">See what a website used to say</p>
+
+        <div class="stage-cols bracketed">
+          <span class="bracket-tr" aria-hidden="true"></span>
+          <span class="bracket-bl" aria-hidden="true"></span>
+
+          <div class="hero-col-left">
+            <p class="caption" data-reveal="words">
+              Start on the compare page with any address: Palimpsest
+              reads its whole history out of the Wayback Machine and
+              sets two moments side by side.
+            </p>
+            <p class="caption" data-reveal="words">
+              Nothing to install and no account. The record belongs to the
+              Archive, and you can read it right here.
+            </p>
+          </div>
+
+          <div class="hero-col-right">
+            <p class="caption caption-right" data-reveal="words">
+              What moved, what vanished and what showed up, measured
+              out of the pages themselves rather than summarised
+              from them.
+            </p>
+            <p class="caption caption-right" data-reveal="words">
+              The same record reads three ways: a comparison, a
+              dashboard, or a film played back capture by capture.
+            </p>
+          </div>
+        </div>
+
+        <!-- The film, on the desk it is played on.
+
+             What stands in the middle of the row is the reference's own
+             object, drawn here rather than photographed: an old cream computer
+             on a mat, a plant at each end, the keyboard lying in front of it.
+             It is one SVG rather than a stack of boxes because that is what the
+             reference is, a picture of a machine, and a picture of a machine
+             cannot be assembled out of divs. The bevel on the case, the recess
+             the glass sits in, the shadows the case and the keyboard throw on
+             the mat, the keys and the grain over the whole thing are drawing,
+             not layout, and a drawing keeps its proportions at every window
+             size because every measurement in it is its own unit.
+
+             The glass is the one measurement in here that anything else needs.
+             The drawing's is 640 by 360 of those units, sixteen to nine, which
+             is the film's own shape, so the film fills it with nothing cut off
+            , and the photograph's is the tube it really has, 1.36 to one. Both
+             are boxes laid over exactly that rectangle and both are described
+             in theme.css: theme.js measures the drawing's and publishes its
+             place as --scr-l/t/w/h, and the photograph's five numbers are
+             measured once, by hand, off the picture below. The set is then grown
+             whole until the glass is the window (see .stage .media-slot), so
+             the picture is on the monitor at every position of the move and
+             never once bigger than the machine it is playing on. -->
+        <div class="media-slot rig-wait" id="filmSlot" data-art="photo">
+          <div class="rig" aria-hidden="true">
+            <!-- The set is the reference's own picture of the machine, and the
+                 drawing below is the same machine drawn by hand.
+                 data-art on .media-slot says which one the page shows; both are
+                 in the file and both agree with .screen about where the glass
+                 is (see the two sets of --scr-* numbers in theme.css), so
+                 switching between them is that one attribute and nothing else.
+                 The photograph is the reference's photograph and it is the whole
+                 of the art: the machine on its terracotta mat with a plant at
+                 each end, cut to the mat and to the leaves that hang over its
+                 edge, with the reference's own paper taken out of it and made
+                 transparent, so the mat stands on this sheet, its edges are the
+                 picture's edges, and the leaves fall outside it onto the page
+                 rather than being cropped away at the picture's edge. Nothing
+                 about that is negotiable: the leaves are the picture.
+
+                 Two things about it are ours rather than the reference's, and
+                 both of them are about the film being able to play on it.
+
+                 The screen. The reference's tube is 1.35 to one, the shape of
+                 the glass it really had, and the film is sixteen to nine, and
+                 two shapes cannot both be kept whole. Every earlier attempt
+                 that filled that tube with a 16:9 film either cut a tenth off
+                 each side of every frame or left bands of dead colour across
+                 the glass, and the reader rejected both, by name: a screen the
+                 film does not fill is a screen the film is not playing on. So
+                 the tube's opening was rebuilt: the glass is now exactly
+                 sixteen to nine, edge to edge inside the bezel, with the two
+                 bands of case that used to stand above and below it made part
+                 of the bezel instead, the beige drawn from the case's own rows
+                 and the well's dark line drawn back round the new opening. The
+                 film fills the whole screen of the machine and nothing of the
+                 frame is outside it, at any window shape.
+
+                 And the mat is centred on the tube's own centre line, not on the
+                 picture's. The plants at either end are not the same size, so
+                 the two are not the same thing, and it matters: the screen sits
+                 at 50.011% of this picture's width, so the film is 0.01% off the
+                 centre of the panel rather than the couple of per cent it would
+                 be if the mat were squared to the picture, and it does not drift
+                 sideways as it grows. The picture is 4700 by 3264. -->
+            <img class="rig-art rig-art-photo" src="/media/desk-machine.png?v=3" alt="" width="3200" height="2222" decoding="async" fetchpriority="high" />
+            <svg class="rig-art rig-art-svg" viewBox="0 0 1500 1000" preserveAspectRatio="xMidYMid meet" focusable="false">
+              <defs>
+                <!-- The mat: a warm terracotta panel, lit from above and
+                     slightly from the left, which is the one light direction
+                     the whole drawing agrees about. -->
+                <linearGradient id="rigMat" x1="0.08" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#cd8d6f" />
+                  <stop offset="0.42" stop-color="#c0815f" />
+                  <stop offset="1" stop-color="#a8664d" />
+                </linearGradient>
+                <radialGradient id="rigMatSheen" cx="0.38" cy="-0.06" r="0.9">
+                  <stop offset="0" stop-color="#fff0da" stop-opacity="0.22" />
+                  <stop offset="0.62" stop-color="#fff0da" stop-opacity="0" />
+                </radialGradient>
+                <radialGradient id="rigMatVignette" cx="0.5" cy="0.42" r="0.82">
+                  <stop offset="0.52" stop-color="#7c3a1c" stop-opacity="0" />
+                  <stop offset="1" stop-color="#7c3a1c" stop-opacity="0.26" />
+                </radialGradient>
+
+                <!-- The case: cream plastic with a bevel, a top face catching
+                     the light and a shadow gathering along its foot. -->
+                <linearGradient id="rigCase" x1="0.05" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#f9f2de" />
+                  <stop offset="0.34" stop-color="#f1e5c6" />
+                  <stop offset="0.72" stop-color="#e6d6ad" />
+                  <stop offset="1" stop-color="#d5c39a" />
+                </linearGradient>
+                <radialGradient id="rigCaseSheen" cx="0.18" cy="0.03" r="0.82">
+                  <stop offset="0" stop-color="#fffbf2" stop-opacity="0.42" />
+                  <stop offset="0.52" stop-color="#fffbf2" stop-opacity="0.08" />
+                  <stop offset="1" stop-color="#fffbf2" stop-opacity="0" />
+                </radialGradient>
+                <radialGradient id="rigCaseEdge" cx="0.5" cy="0.46" r="0.74">
+                  <stop offset="0.58" stop-color="#7d6142" stop-opacity="0" />
+                  <stop offset="1" stop-color="#7d6142" stop-opacity="0.2" />
+                </radialGradient>
+                <linearGradient id="rigCaseTop" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#fffdf6" stop-opacity="0.5" />
+                  <stop offset="1" stop-color="#fffdf6" stop-opacity="0" />
+                </linearGradient>
+                <linearGradient id="rigCaseLeft" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="#fffdf6" stop-opacity="0.34" />
+                  <stop offset="1" stop-color="#fffdf6" stop-opacity="0" />
+                </linearGradient>
+                <linearGradient id="rigCaseFoot" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#8a6a44" stop-opacity="0" />
+                  <stop offset="1" stop-color="#8a6a44" stop-opacity="0.28" />
+                </linearGradient>
+
+                <!-- The recess the tube sits in, the glass itself, and the two
+                     lips of it: shadow along the top, light along the floor. -->
+                <linearGradient id="rigWell" x1="0.08" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#1d150f" />
+                  <stop offset="1" stop-color="#4b3a26" />
+                </linearGradient>
+                <linearGradient id="rigWellTop" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#0b0704" stop-opacity="0.66" />
+                  <stop offset="1" stop-color="#0b0704" stop-opacity="0" />
+                </linearGradient>
+                <linearGradient id="rigWellFloor" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#ffeacb" stop-opacity="0" />
+                  <stop offset="1" stop-color="#ffeacb" stop-opacity="0.2" />
+                </linearGradient>
+                <linearGradient id="rigGlass" x1="0.2" y1="0" x2="0.75" y2="1">
+                  <stop offset="0" stop-color="#1b130f" />
+                  <stop offset="1" stop-color="#100b08" />
+                </linearGradient>
+                <linearGradient id="rigNeck" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#e8dab6" />
+                  <stop offset="1" stop-color="#c7b78f" />
+                </linearGradient>
+                <linearGradient id="rigFoot" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#f5e9cb" />
+                  <stop offset="0.5" stop-color="#e3d4ab" />
+                  <stop offset="1" stop-color="#c6b58b" />
+                </linearGradient>
+
+                <!-- The keyboard: keys as a tile rather than as sixty shapes,
+                     which is what they are at the size this is read at, and
+                     the same tile the reference has, a light top and a shadowed
+                     front lip on every one of them. -->
+                <linearGradient id="rigKeyTop" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#fbf3da" />
+                  <stop offset="0.58" stop-color="#eee0ba" />
+                  <stop offset="1" stop-color="#d6c49a" />
+                </linearGradient>
+                <pattern id="rigKeys" width="30" height="26" patternUnits="userSpaceOnUse">
+                  <rect width="30" height="26" fill="#c3b088" />
+                  <rect x="2" y="1.5" width="26" height="21" rx="3.5" fill="url(#rigKeyTop)" />
+                  <rect x="2" y="20" width="26" height="2.5" rx="1" fill="#ab9469" fill-opacity="0.5" />
+                </pattern>
+                <linearGradient id="rigLip" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#efe4c4" />
+                  <stop offset="0.4" stop-color="#ded0a8" />
+                  <stop offset="1" stop-color="#c2b085" />
+                </linearGradient>
+
+                <!-- The plants: three tones of the same leaf, so a fan of them
+                     reads as depth rather than as one shape repeated. -->
+                <linearGradient id="rigLeafDeep" x1="0" y1="0" x2="1" y2="0.3">
+                  <stop offset="0" stop-color="#1a3117" />
+                  <stop offset="0.65" stop-color="#24401d" />
+                  <stop offset="1" stop-color="#2d4c25" />
+                </linearGradient>
+                <linearGradient id="rigLeafMid" x1="0" y1="0" x2="1" y2="0.3">
+                  <stop offset="0" stop-color="#223c1b" />
+                  <stop offset="0.6" stop-color="#32542a" />
+                  <stop offset="1" stop-color="#416f36" />
+                </linearGradient>
+                <linearGradient id="rigLeafLit" x1="0" y1="0" x2="1" y2="0.3">
+                  <stop offset="0" stop-color="#2f5127" />
+                  <stop offset="0.55" stop-color="#457334" />
+                  <stop offset="1" stop-color="#5b9143" />
+                </linearGradient>
+                <linearGradient id="rigPot" x1="0.15" y1="0" x2="0.9" y2="1">
+                  <stop offset="0" stop-color="#c37f4c" />
+                  <stop offset="0.45" stop-color="#ab6839" />
+                  <stop offset="1" stop-color="#8b5230" />
+                </linearGradient>
+                <linearGradient id="rigPotRim" x1="0.15" y1="0" x2="0.9" y2="1">
+                  <stop offset="0" stop-color="#cd8a55" />
+                  <stop offset="0.5" stop-color="#b47142" />
+                  <stop offset="1" stop-color="#96593a" />
+                </linearGradient>
+
+                <!-- The three shadows the drawing needs, and the grain. A
+                     contact shadow is tight and dark, a cast shadow is wide
+                     and faint, and one blur cannot be both. -->
+                <filter id="rigSoft" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+                  <feGaussianBlur stdDeviation="26" />
+                </filter>
+                <filter id="rigTight" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+                  <feGaussianBlur stdDeviation="11" />
+                </filter>
+                <filter id="rigFine" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+                  <feGaussianBlur stdDeviation="5" />
+                </filter>
+                <filter id="rigGrain" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+                  <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="11" />
+                  <feColorMatrix type="saturate" values="0" />
+                </filter>
+
+                <clipPath id="rigCaseClip">
+                  <rect x="370" y="148" width="760" height="502" rx="28" />
+                </clipPath>
+                <clipPath id="rigWellClip">
+                  <rect x="416" y="182" width="668" height="388" rx="24" />
+                </clipPath>
+                <g id="rigLeaf">
+                  <path d="M0 0 C 14 -26 48 -38 106 -12 C 66 12 30 14 0 0 Z" />
+                  <path d="M9 -7 C 32 -26 58 -34 88 -29 C 58 -17 32 -10 9 -7 Z" fill="#ffffff" fill-opacity="0.16" />
+                  <path d="M4 1 C 34 -8 74 -13 102 -13" fill="none" stroke="#1c3118" stroke-opacity="0.3" stroke-width="1.5" />
+                </g>
+              </defs>
+
+              <!-- The mat, and the shadows the things standing on it throw. -->
+              <rect x="104" y="100" width="1292" height="882" rx="48" fill="url(#rigMat)" />
+              <rect x="104" y="100" width="1292" height="882" rx="48" fill="url(#rigMatSheen)" />
+              <rect x="104" y="100" width="1292" height="882" rx="48" fill="url(#rigMatVignette)" />
+              <rect x="105.5" y="101.5" width="1289" height="879" rx="46.5" fill="none" stroke="#6f2f12" stroke-opacity="0.2" stroke-width="3" />
+              <ellipse cx="200" cy="942" rx="152" ry="18" fill="#5f2c12" fill-opacity="0.34" filter="url(#rigTight)" />
+              <ellipse cx="1270" cy="952" rx="106" ry="16" fill="#5f2c12" fill-opacity="0.32" filter="url(#rigTight)" />
+              <ellipse cx="750" cy="664" rx="392" ry="36" fill="#5f2c12" fill-opacity="0.2" filter="url(#rigSoft)" />
+              <ellipse cx="750" cy="740" rx="216" ry="20" fill="#5f2c12" fill-opacity="0.36" filter="url(#rigTight)" />
+              <ellipse cx="750" cy="902" rx="404" ry="26" fill="#5f2c12" fill-opacity="0.3" filter="url(#rigSoft)" />
+
+              <!-- The left plant, behind the machine: stems, then the leaves
+                   in three passes, the far ones dark, the near ones lit, and
+                   the pot over the foot of all of them. It stands taller than
+                   the monitor and its leaves run off the mat onto the sheet,
+                   which is the reference's own arrangement. -->
+              <g>
+                <g fill="none" stroke="#4a7338" stroke-width="8" stroke-linecap="round" opacity="0.95">
+                  <path d="M200 780 C 196 680 186 590 172 500" />
+                  <path d="M200 780 C 208 660 224 540 244 430" />
+                  <path d="M200 780 C 202 600 206 430 208 300" />
+                  <path d="M200 780 C 180 650 154 550 120 450" />
+                  <path d="M200 780 C 228 664 266 580 306 490" />
+                  <path d="M200 780 C 218 706 250 656 298 606" />
+                </g>
+                <g fill="url(#rigLeafDeep)">
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-104.3) scale(5.66)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-92.8) scale(6.55 -6.55)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-110.9) scale(4.6)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-123.9) scale(3.37 -3.37)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-177.3) scale(1.7 -1.7)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-99.7) scale(3.55 -3.55)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-112.8) scale(2.06)" />
+                </g>
+                <g fill="url(#rigLeafMid)">
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-68.9) scale(6.43 -6.43)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-56.4) scale(5.79)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-135.0) scale(1.98)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-26.1) scale(4.32 -4.32)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-90.0) scale(4.62 -4.62)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-55.7) scale(4.96 -4.96)" />
+                </g>
+                <g fill="url(#rigLeafLit)">
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-81.4) scale(6.7)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-41.9) scale(4.79)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-66.9) scale(4.89)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-77.2) scale(5.85)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-25.7) scale(3.0)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-119.2) scale(1.72 -1.72)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-46.8) scale(2.16)" />
+                  <use href="#rigLeaf" transform="translate(200 750) rotate(-88.6) scale(2.34 -2.34)" />
+                </g>
+                <path d="M60 774 L340 774 L314 922 Q310 938 294 938 L106 938 Q90 938 86 922 Z" fill="url(#rigPot)" />
+                <path d="M60 774 L340 774 L335 802 L65 802 Z" fill="#c07b4a" fill-opacity="0.4" />
+                <rect x="54" y="744" width="292" height="30" rx="12" fill="url(#rigPotRim)" />
+                <ellipse cx="200" cy="745" rx="130" ry="15" fill="#503522" />
+                <ellipse cx="200" cy="742" rx="124" ry="12" fill="#63452b" />
+              </g>
+
+              <!-- The machine: stand first, then the case over it, the recess
+                   in the case, the glass in the recess, and the front panel's
+                   own furniture along the chin. -->
+              <g>
+                <path d="M692 648 L808 648 L838 700 L662 700 Z" fill="url(#rigNeck)" />
+                <rect x="560" y="694" width="380" height="40" rx="17" fill="url(#rigFoot)" />
+                <rect x="566" y="698" width="368" height="7" rx="3.5" fill="#fffaf0" fill-opacity="0.42" />
+                <rect x="572" y="726" width="356" height="6" rx="3" fill="#8a6a44" fill-opacity="0.22" />
+                <rect x="370" y="148" width="760" height="502" rx="28" fill="url(#rigCase)" />
+                <g clip-path="url(#rigCaseClip)">
+                  <rect x="370" y="148" width="760" height="502" fill="url(#rigCaseSheen)" />
+                  <rect x="370" y="148" width="760" height="502" fill="url(#rigCaseEdge)" />
+                  <rect x="370" y="148" width="760" height="22" fill="url(#rigCaseTop)" />
+                  <rect x="370" y="148" width="16" height="502" fill="url(#rigCaseLeft)" />
+                  <rect x="370" y="598" width="760" height="52" fill="url(#rigCaseFoot)" />
+                  <rect x="370.75" y="148.75" width="758.5" height="500.5" rx="27.25" fill="none" stroke="#bfa87c" stroke-opacity="0.45" stroke-width="1.5" />
+                </g>
+                <rect x="416" y="182" width="668" height="388" rx="24" fill="url(#rigWell)" />
+                <g clip-path="url(#rigWellClip)">
+                  <rect x="416" y="182" width="668" height="44" fill="url(#rigWellTop)" />
+                  <rect x="416" y="534" width="668" height="36" fill="url(#rigWellFloor)" />
+                  <rect x="417.5" y="183.5" width="665" height="385" rx="22.5" fill="none" stroke="#0b0704" stroke-opacity="0.45" stroke-width="3" />
+                </g>
+                <rect class="rig-glass" x="430" y="196" width="640" height="360" rx="16" fill="url(#rigGlass)" />
+                <rect x="430.5" y="196.5" width="639" height="359" rx="15.5" fill="none" stroke="#000000" stroke-opacity="0.5" />
+                <rect x="430" y="598" width="112" height="18" rx="5" fill="#2c2318" />
+                <rect x="438" y="602" width="96" height="5" rx="2.5" fill="#6d6053" fill-opacity="0.65" />
+                <circle cx="572" cy="607" r="11" fill="#e8b249" fill-opacity="0.28" filter="url(#rigFine)" />
+                <circle cx="572" cy="607" r="5" fill="#d9a13d" />
+                <rect x="636" y="600" width="30" height="14" rx="4" fill="#e2d3ac" />
+                <rect x="682" y="600" width="30" height="14" rx="4" fill="#e2d3ac" />
+                <g fill="#57482f" fill-opacity="0.5">
+                  <rect x="986" y="592" width="7" height="30" rx="3.5" />
+                  <rect x="1002" y="592" width="7" height="30" rx="3.5" />
+                  <rect x="1018" y="592" width="7" height="30" rx="3.5" />
+                  <rect x="1034" y="592" width="7" height="30" rx="3.5" />
+                  <rect x="1050" y="592" width="7" height="30" rx="3.5" />
+                </g>
+                <rect x="414.75" y="180.75" width="670.5" height="390.5" rx="25.25" fill="none" stroke="#a8916a" stroke-opacity="0.45" stroke-width="1.5" />
+              </g>
+
+              <!-- The keyboard, lying away from the reader: the top face with
+                   the keys on it, the space bar and the gap before the number
+                   pad over the tile, and the front lip under all of it. -->
+              <g>
+                <path d="M462 706 L1038 706 Q1050 706 1054 716 L1134 872 Q1140 884 1126 884 L374 884 Q360 884 366 872 L446 716 Q450 706 462 706 Z" fill="#d9c9a1" />
+                <path d="M470 722 L1030 722 Q1038 722 1040 729 L1112 860 Q1116 870 1104 870 L396 870 Q384 870 388 860 L460 729 Q462 722 470 722 Z" fill="url(#rigKeys)" />
+                <path d="M946 726 L1012 866" fill="none" stroke="#c3b088" stroke-width="11" stroke-linecap="round" />
+                <path d="M596 836 L868 836 Q876 836 878 844 L882 860 Q884 868 874 868 L582 868 Q572 868 574 860 L578 844 Q580 836 596 836 Z" fill="url(#rigKeyTop)" />
+                <path d="M596 836 L872 836 L874 841 L594 841 Z" fill="#fffaea" fill-opacity="0.5" />
+                <path d="M366 872 L1134 872 L1130 884 L370 884 Z" fill="#8a6a44" fill-opacity="0.14" />
+                <path d="M358 882 L1142 882 Q1150 882 1152 892 L1154 897 Q1156 906 1146 906 L354 906 Q344 906 346 897 L348 892 Q350 882 358 882 Z" fill="url(#rigLip)" />
+                <path d="M358 882 L1142 882 Q1149 882 1151 889 L1152 892 L348 892 L349 889 Q351 882 358 882 Z" fill="#fffaea" fill-opacity="0.38" />
+                <path d="M352 902 L1148 902 L1146 906 L354 906 Z" fill="#8a6a44" fill-opacity="0.24" />
+              </g>
+
+              <!-- The right plant, in front of the machine: smaller than the
+                   left one, and one of its leaves crosses the bezel, which is
+                   what says the plant is between the reader and the computer
+                   rather than beside it. -->
+              <g>
+                <g fill="none" stroke="#4a7338" stroke-width="6" stroke-linecap="round" opacity="0.95">
+                  <path d="M1270 806 C 1266 730 1258 660 1246 600" />
+                  <path d="M1270 806 C 1278 720 1290 640 1306 570" />
+                  <path d="M1270 806 C 1272 700 1274 620 1276 540" />
+                  <path d="M1270 806 C 1262 750 1250 706 1236 668" />
+                </g>
+                <g fill="url(#rigLeafDeep)">
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-105.6) scale(2.86 -2.86)" />
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-129.4) scale(1.82 -1.82)" />
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-94.4) scale(3.24 -3.24)" />
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-108.1) scale(1.98)" />
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-127.5) scale(2.5 -2.5)" />
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-98.2) scale(1.62 -1.62)" />
+                </g>
+                <g fill="url(#rigLeafMid)">
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-67.5) scale(3.06 -3.06)" />
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-32.6) scale(1.89 -1.89)" />
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-77.5) scale(3.11)" />
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-61.7) scale(2.03 -2.03)" />
+                </g>
+                <g fill="url(#rigLeafLit)">
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-86.9) scale(3.52)" />
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-45.6) scale(2.64)" />
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-60.6) scale(2.83)" />
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-116.4) scale(1.46 -1.46)" />
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-73.4) scale(1.62)" />
+                  <use href="#rigLeaf" transform="translate(1270 806) rotate(-53.2) scale(1.38 -1.38)" />
+                </g>
+                <path d="M1182 828 L1358 828 L1336 936 Q1332 950 1320 950 L1220 950 Q1208 950 1204 936 Z" fill="url(#rigPot)" />
+                <path d="M1182 828 L1358 828 L1354 850 L1186 850 Z" fill="#c07b4a" fill-opacity="0.4" />
+                <rect x="1172" y="800" width="196" height="28" rx="10" fill="url(#rigPotRim)" />
+                <ellipse cx="1270" cy="801" rx="88" ry="11" fill="#503522" />
+                <ellipse cx="1270" cy="798" rx="84" ry="9" fill="#63452b" />
+              </g>
+
+              <!-- The grain over the whole picture, last of all: one pass of
+                   noise over everything is what makes the parts agree that they
+                   are in the same photograph. -->
+              <rect class="rig-grain" x="104" y="100" width="1292" height="882" rx="48" filter="url(#rigGrain)" />
+            </svg>
+          </div>
+
+          <!-- The screen: the monitor's glass at the top of the section, the
+               whole window at the bottom of it. The film plays in here.
+
+               It stands in two boxes rather than one, and both of them are
+               what keeps the film ON the glass.
+
+               .rig-face is the slot's own box, carrying the same drift the
+               machine carries (see --rig-drop), so the film and the case are
+               one object on the page and cannot come apart on the way down it.
+
+               .rig-shot is the rectangle of the picture the reader can see.
+               The photograph is cropped by `object-fit: cover` as the slot
+               grows towards the window's shape, and the crop moves the glass
+               up inside the slot, so a share of the slot stops being a share
+               of the glass the reader is looking at. This box is that crop
+               written as a box, and .screen's own numbers are read against it:
+               the picture's own percentages, which are the ones that were
+               measured off the finished art. Both are explained where they are
+               written, in theme.css. -->
+          <div class="rig-face">
+            <div class="rig-shot">
+          <div class="screen" id="filmScreen">
+            <!-- The film, standing on the glass rather than autoplaying: this
+                 is a machine you press play on, and the line above the note
+                 says so. It starts with no sound, because a film nobody asked
+                 for does not get to talk, and theme.js starts it once the
+                 reader has scrolled the screen open, the reader can also take
+                 the sound, or stop the film, with the two controls below. -->
+            <video
+              id="heroFilm"
+              src="/media/wayback-1996.mp4"
+              muted
+              loop
+              playsinline
+              preload="metadata"
+              aria-label="The Wayback Machine's first crawl from 1996, an Internet Archive film"
+            ></video>
+
+            <!-- The screen before the film: the reference's own picture of an
+                 old monitor, which is a banded colour field with three words
+                 written on it. It is what the glass shows until the film is
+                 really running, so the reader sees a screen rather than a
+                 hole, and it steps aside, once, when the film starts. -->
+            <div class="media-placeholder">
+              <p class="media-screen">Scroll<br />to play<br />video</p>
+              <span class="caption">1996 · The first crawl</span>
+            </div>
+
+            <!-- The film's own two controls, at the feet of the picture: the
+                 sound on the left, which starts off and which the reader has
+                 to ask for, and the pause on the right, because a film that
+                 runs on while they are reading something else is work. They
+                 live inside the screen, so they are at the foot of the glass on
+                 the panel and at the foot of the window once the glass has
+                 taken it, without a second set of numbers anywhere. -->
+            <div class="film-controls">
+              <button class="film-btn film-sound" id="filmSound" type="button" aria-pressed="false" aria-label="Film sound off. Turn it on">
+                <svg class="film-ico" viewBox="0 0 24 24" aria-hidden="true">
+                  <path class="ico-off" d="M4 9h3.4L12 5.2v13.6L7.4 15H4zM16.4 9.6l4.2 4.8M20.6 9.6l-4.2 4.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+                  <path class="ico-on" d="M4 9h3.4L12 5.2v13.6L7.4 15H4zM15.4 8.6a5 5 0 0 1 0 6.8M18.4 6a8.6 8.6 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span class="film-btn-text">Sound</span>
+              </button>
+              <button class="film-btn film-play" id="filmPlay" type="button" aria-pressed="true" aria-label="Pause the film">
+                <svg class="film-ico" viewBox="0 0 24 24" aria-hidden="true">
+                  <g class="ico-pause" fill="currentColor">
+                    <rect x="7.4" y="6" width="3.2" height="12" rx="1.1" />
+                    <rect x="13.4" y="6" width="3.2" height="12" rx="1.1" />
+                  </g>
+                  <path class="ico-play" d="M8 5.6 18.6 12 8 18.4z" fill="currentColor" />
+                </svg>
+                <span class="film-btn-text">Pause</span>
+              </button>
+            </div>
+          </div>
+            </div>
+          </div>
+        </div>
       </div>
+    </section>
 
-      <div id="siteLoading" class="loading-row hero-loading" hidden>
-        <div class="spinner"></div>
-        <span>Pulling the archive history for this address&hellip;</span>
+    <!-- The opening screen's own measurements, taken here, before the first
+         paint, and not once the document has been parsed.
+
+         Three numbers of the hero cannot be written in the stylesheet: the
+         head's height (the screen is pulled up under it and gives the room
+         back as padding), the frame's height (what the window leaves after the
+         word, the line and their margins) and the frame's centre. theme.js used
+         to take them, as a deferred script, which on this page means AFTER the
+         browser has already painted the sheet: the reader met the fallbacks,
+         385 by 267 where the panel is 549 by 381, every line of type a line
+         lower than it settles, and then, half a second later, the whole screen
+         rearranged itself at once. That is the jump that made a return to this
+         page read as broken, and no amount of tuning the fallbacks fixes it,
+         because any measurement taken after the first paint is a second
+         painting of the same page.
+
+         A parser-blocking script cannot run after the paint it is standing in
+         front of: the parser has not yielded, so the first frame the reader
+         ever sees already carries these numbers. The order inside is the one
+         thing that matters - the head's height is what the pinned screen's
+         padding is written from, and the frame's height is what that padding
+         leaves, so the head goes in first and the frame is read after it, two
+         layouts in the same task rather than one measured against the other's
+         leftovers.
+
+         theme.js keeps the moments these can change again (a resize, the fonts
+         landing under the type) and calls the same function for them, so there
+         is one implementation of the measurement rather than two. -->
+    <script>
+    (function () {
+      var root = document.documentElement;
+      var fit = function () {
+        var head = document.querySelector('.site-head');
+        var pin = document.querySelector('.stage-pin');
+        var frame = document.querySelector('.stage-cols');
+        var slot = document.getElementById('filmSlot');
+        var glass = document.querySelector('.rig-glass');
+        if (head) root.style.setProperty('--head', head.getBoundingClientRect().height.toFixed(2) + 'px');
+        if (pin && frame) {
+          var pr = pin.getBoundingClientRect();
+          var fr = frame.getBoundingClientRect();
+          pin.style.setProperty('--frame-h', fr.height + 'px');
+          pin.style.setProperty('--frame-cy', fr.top - pr.top + fr.height / 2 + 'px');
+        }
+        // The glass shares are the drawing's own numbers when the set is the
+        // photograph (see .media-slot[data-art="photo"] in theme.css): there is
+        // no .rig-glass in it, and this is a no-op. They are measured only for
+        // the drawn set, whose glass is a shape in the SVG.
+        if (glass && slot) {
+          slot.style.setProperty('--rig-drop', '0px');
+          slot.style.setProperty('--rig-slide', '0px');
+          var sb = slot.getBoundingClientRect();
+          var gb = glass.getBoundingClientRect();
+          slot.style.removeProperty('--rig-drop');
+          slot.style.removeProperty('--rig-slide');
+          if (!sb.width || !sb.height || !gb.width) return fit;
+          var rl = (gb.left - sb.left) / sb.width;
+          var rt = (gb.top - sb.top) / sb.height;
+          var rw = gb.width / sb.width;
+          var rh = gb.height / sb.height;
+          slot.style.setProperty('--scr-l', (rl * 100).toFixed(3) + '%');
+          slot.style.setProperty('--scr-t', (rt * 100).toFixed(3) + '%');
+          slot.style.setProperty('--scr-w', (rw * 100).toFixed(3) + '%');
+          slot.style.setProperty('--scr-h', (rh * 100).toFixed(3) + '%');
+          slot.style.setProperty('--scr-w-n', rw.toFixed(5));
+          slot.style.setProperty('--scr-cx-n', (rl + rw / 2).toFixed(5));
+          slot.style.setProperty('--scr-cy-n', (rt + rh / 2).toFixed(5));
+        }
+        return fit;
+      };
+      window.palimpsestFit = fit;
+      fit();
+    })();
+    </script>
+
+    <!-- ----------------------------------------------------------- statement -->
+    <section class="section statement">
+      <div class="statement-inner">
+        <!-- The reference's mark, traced rather than invented, and it is ONE
+             hollow outline: a corner opening down the page, its upright on the
+             right and its foot running back to the left, with the inner corner
+             closed by a wall that shears away to the top right. That single
+             wall is what makes it read as an arrow pointing down the page with
+             no arrowhead. It used to be drawn as two shapes, a corner and a
+             bar lying across it, and two hollow outlines crossing each other
+             show both of themselves at once: the bar's ends were visible
+             through the corner's walls, which is what made the mark look
+             wrong. The numbers are the reference's own, read off its picture:
+             a 36-wide upright in a 134 square, every diagonal at 45°, the
+             corner where the two of them meet, and the tip where the lower one
+             lands on the foot. Every line on this site is a hollow outline
+             like this one. -->
+        <svg class="arrow-mark" viewBox="-2 -2 138 138" fill="none" aria-hidden="true" data-reveal="block">
+          <path d="M134 0H98V75L27 4 2 29 72.5 99H0V134H134Z" stroke="#17120e" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+        </svg>
+        <h2 class="display display-lg" data-reveal="letters">Every page<br />leaves a trace.</h2>
+        <p class="caption caption-soft statement-caption" data-reveal="words">
+          The addresses below were read from their own archived captures.
+        </p>
       </div>
+    </section>
 
-      <p id="urlError" class="error-text" hidden></p>
+    <!-- ------------------------------------------------------------- the band
+         The stripes and the row of plates, which come in from the right once
+         and then turn to the left by themselves at the same speed as the word
+         at the head of the page, nothing in it is tied to the scroll. The
+         move is written in theme.js; see the note there. -->
+    <section class="section words-band" aria-label="Recently traced addresses">
+      <div class="words-stripes" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="plates">
+        <div class="plates-track">
+          <a class="plate" href="/compare?url=settlement.org">settlement.org</a>
+          <a class="plate" href="/compare?url=apple.com">apple.com</a>
+          <a class="plate" href="/compare?url=nytimes.com">nytimes.com</a>
+          <a class="plate" href="/compare?url=stripe.com">stripe.com</a>
+          <a class="plate" href="/compare?url=airbnb.com">airbnb.com</a>
+          <a class="plate" href="/compare?url=canada.ca">canada.ca</a>
+          <a class="plate" href="/compare?url=wikipedia.org">wikipedia.org</a>
+          <a class="plate" href="/compare?url=google.com">google.com</a>
+          <!-- the same eight again, so that the belt, which turns by one
+               repeat of the row and is taken modulo it, always has a plate
+               behind the first one when it comes round. theme.js copies these
+               again if a wide window needs a longer row; the copies are all
+               decoration and are kept out of the reading order. -->
+          <a class="plate" href="/compare?url=settlement.org" aria-hidden="true" tabindex="-1">settlement.org</a>
+          <a class="plate" href="/compare?url=apple.com" aria-hidden="true" tabindex="-1">apple.com</a>
+          <a class="plate" href="/compare?url=nytimes.com" aria-hidden="true" tabindex="-1">nytimes.com</a>
+          <a class="plate" href="/compare?url=stripe.com" aria-hidden="true" tabindex="-1">stripe.com</a>
+          <a class="plate" href="/compare?url=airbnb.com" aria-hidden="true" tabindex="-1">airbnb.com</a>
+          <a class="plate" href="/compare?url=canada.ca" aria-hidden="true" tabindex="-1">canada.ca</a>
+          <a class="plate" href="/compare?url=wikipedia.org" aria-hidden="true" tabindex="-1">wikipedia.org</a>
+          <a class="plate" href="/compare?url=google.com" aria-hidden="true" tabindex="-1">google.com</a>
+        </div>
+      </div>
+    </section>
 
-      <!-- The other way of reading the same archive, at the foot of the card.
-           Flanked by two hairlines so it reads as a divider with a door in it,
-           quieter than the button above. -->
-      <div class="hero-alt">
-        <span class="hero-alt-line" aria-hidden="true"></span>
-        <a id="claimsCta" class="hero-alt-link" href="/claims.html">
-          Claim records
-          <svg class="hero-alt-arrow" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M5 12h12.5M12.5 7l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    <!-- --------------------------------------------------------- the three ways -->
+    <section class="section">
+      <div class="features">
+        <article class="feature">
+          <svg class="feature-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true" data-reveal="block">
+            <path d="M32 32C22 24 22 10 32 2c10 8 10 22 0 30Z" stroke="#17120e" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+            <path d="M32 32C22 24 22 10 32 2c10 8 10 22 0 30Z" transform="rotate(90 32 32)" stroke="#17120e" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+            <path d="M32 32C22 24 22 10 32 2c10 8 10 22 0 30Z" transform="rotate(180 32 32)" stroke="#17120e" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+            <path d="M32 32C22 24 22 10 32 2c10 8 10 22 0 30Z" transform="rotate(270 32 32)" stroke="#17120e" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
           </svg>
-        </a>
-        <span class="hero-alt-line" aria-hidden="true"></span>
-      </div>
-    </div>
-  </section>
+          <h3 class="feature-title" data-reveal="letters">Read every<br />capture</h3>
+          <p class="caption" data-reveal="words">
+            Each archived version of the page is fetched once and kept, so a
+            record read once costs the Archive nothing ever again.
+          </p>
+        </article>
 
-  <section id="timelineSection" class="timeline-section" hidden>
-    <div class="timeline-header">
-      <div>
-        <h2 id="timelineSiteName">&nbsp;</h2>
-        <p id="timelineMeta" class="muted"></p>
-      </div>
-      <div class="timeline-header-actions">
-        <button id="openDashboardBtn" class="secondary-btn dash-open-btn" type="button">
-          <svg viewBox="0 0 24 24" fill="none"><path d="M4 20V10M11 20V4M18 20v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Site dashboard
-        </button>
-        <button id="openTimelapseBtn" class="secondary-btn dash-open-btn" type="button">
-          <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7.5v4.8l3.1 1.9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Timelapse
-        </button>
-      </div>
-    </div>
+        <article class="feature">
+          <svg class="feature-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true" data-reveal="block">
+            <path d="M32 2C36 24 40 28 62 32 40 36 36 40 32 62 28 40 24 36 2 32 24 28 28 24 32 2Z" stroke="#17120e" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+          </svg>
+          <h3 class="feature-title" data-reveal="letters">Line up two<br />moments</h3>
+          <p class="caption" data-reveal="words">
+            The comparison marks changes down to the sentence, and says where on
+            the page each one happened, not just that the page differs.
+          </p>
+        </article>
 
-    <div class="timeline-track-wrap">
-      <div id="timelineTrack" class="timeline-track">
-        <div class="track-line"></div>
-        <div id="tickLayer" class="tick-layer"></div>
-        <div id="rangeFill" class="range-fill"></div>
-        <button id="handleFrom" class="handle handle-from" aria-label="Earlier date" type="button"></button>
-        <button id="handleTo" class="handle handle-to" aria-label="Later date" type="button"></button>
+        <article class="feature">
+          <svg class="feature-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true" data-reveal="block">
+            <path d="M4 4C28 18 28 46 4 60L60 60C36 46 36 18 60 4Z" stroke="#17120e" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+          </svg>
+          <h3 class="feature-title" data-reveal="letters">Play the<br />whole record</h3>
+          <p class="caption" data-reveal="words">
+            The film runs the same captures in order, so a layout change and a
+            sentence that quietly left arrive when they happened, not as a list.
+          </p>
+        </article>
       </div>
-      <div class="track-endpoints">
-        <span id="earliestLabel" class="muted mono"></span>
-        <span id="latestLabel" class="muted mono"></span>
-      </div>
-    </div>
+    </section>
 
-    <div class="selection-bar">
-      <div class="selection-dates">
-        <div class="selection-date">
-          <span class="selection-label">From</span>
-          <span id="fromDate" class="mono selection-value">&nbsp;</span>
-        </div>
-        <div class="selection-arrow">&rarr;</div>
-        <div class="selection-date">
-          <span class="selection-label">To</span>
-          <span id="toDate" class="mono selection-value">&nbsp;</span>
-        </div>
-      </div>
-      <button id="compareBtn" class="primary-btn" disabled>Compare snapshots</button>
-    </div>
-  </section>
+    <!-- --------------------------------------------------------- the record line -->
+    <!-- The reference sets this as one sentence broken over two display lines,
+         the second indented most of a third of the way across the sheet, with
+         the specimen caught inside the first line and the arrow answering it
+         from the lower right. Nothing is centred, and the indents are vw so
+         the break lands where the reference put it at every window width. -->
+    <section class="section record-line">
+      <p class="caption caption-soft record-caption" data-reveal="words">
+        Nothing is rewritten and nothing is endorsed. The pages are shown exactly as they were.
+      </p>
+      <p class="display record-line-1" data-reveal="letters">
+        We read the markup
+        <span class="specimen" aria-hidden="true">
+          <svg viewBox="0 0 120 92" role="presentation">
+            <rect width="120" height="92" fill="#fff"/>
+            <rect x="8" y="8" width="42" height="6" fill="#17120e"/>
+            <rect x="8" y="20" width="104" height="3" fill="#d8c9b4"/>
+            <rect x="8" y="28" width="86" height="3" fill="#d8c9b4"/>
+            <rect x="8" y="36" width="96" height="3" fill="#d8c9b4"/>
+            <rect x="8" y="50" width="38" height="30" fill="#efe0cd"/>
+            <rect x="52" y="50" width="60" height="3" fill="#d8c9b4"/>
+            <rect x="52" y="58" width="44" height="3" fill="#d8c9b4"/>
+            <rect x="52" y="70" width="30" height="9" fill="#e93642"/>
+            <rect x="8" y="26" width="96" height="3" fill="#e93642" opacity="0.35"/>
+            <rect x="8" y="34" width="86" height="3" fill="#78a06a" opacity="0.45"/>
+          </svg>
+        </span>
+      </p>
+      <p class="display record-line-2" data-reveal="letters">and show it moving</p>
+      <!-- The same mark as the statement's, mirrored, because that is how the
+           reference answers its own headline from the far corner of the page.
+           It is the same single outline as the statement's, turned the other
+           way: one wall closing the corner, not a bar laid across a corner. -->
+      <svg class="record-arrow" viewBox="-2 -2 138 138" fill="none" aria-hidden="true" data-reveal="block">
+        <path d="M0 0H36V75L107 4 132 29 61.5 99H134V134H0Z" stroke="#17120e" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+      </svg>
+    </section>
 
-  <section id="workspace" class="workspace" hidden>
-    <div class="viewer-column">
-      <div class="viewer-toolbar">
-        <div class="view-toggle" role="tablist">
-          <button id="viewSideBySide" class="toggle-btn active" type="button">Side by side</button>
-          <button id="viewOverlay" class="toggle-btn" type="button">Highlighted only</button>
-        </div>
-        <div id="changeCounts" class="change-counts"></div>
-      </div>
+    <!-- --------------------------------------------------------------- the film -->
+    <!-- The dark screen the film is played on, kept as the reference keeps
+         it: one red word over a disc, the two captions that close the screen,
+         and nothing that belongs to any one address, the counts and the
+         dates of a particular record are the comparison's business, not this
+         page's. The captions sit in the section's own corners rather than at
+         the ends of a row, because on the reference they mark the edges of
+         the screen.
 
-      <div id="viewerPanes" class="viewer-panes">
-        <div class="pane">
-          <div class="pane-label">
-            <div class="pane-label-left">
-              <div class="pane-nav-toolbar" id="paneOldToolbar">
-                <button class="pane-nav-btn" data-action="back" type="button" title="Back">
-                  <svg viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-                <button class="pane-nav-btn" data-action="forward" type="button" title="Forward">
-                  <svg viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-                <button class="pane-nav-btn" data-action="reset" type="button" title="Return to comparison">
-                  <svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 1 1 2.6 5.9M4 12V6M4 12h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-              </div>
-              <span id="paneOldDate" class="mono"></span>
-            </div>
-            <div class="pane-label-right">
-              <span class="pane-tag">earlier</span>
-              <button id="paneOldHide" class="pane-expand-btn" type="button" title="Hide this snapshot, show the other one full width">
-                <svg viewBox="0 0 24 24" fill="none"><path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.5 5.3A9.4 9.4 0 0112 5c5 0 9 4 10 7-.4 1.1-1 2.2-1.9 3.2M6.7 6.7C4.8 8 3.4 9.9 2 12c1 3 5 7 10 7 1.4 0 2.7-.3 3.9-.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-              <button id="paneOldExpand" class="pane-expand-btn" type="button" title="View full screen">
-                <svg viewBox="0 0 24 24" fill="none"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-            </div>
-          </div>
-          <div class="pane-frame-wrap">
-            <iframe id="paneOld" class="pane-frame" sandbox="allow-same-origin allow-scripts" title="Earlier snapshot"></iframe>
-            <div id="paneOldLoading" class="pane-loading"><div class="spinner"></div></div>
-          </div>
-          <button id="paneOldRestore" class="pane-restore-btn" type="button" title="Show earlier snapshot">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span class="pane-restore-label">Earlier</span>
-          </button>
-        </div>
-        <div class="pane">
-          <div class="pane-label">
-            <div class="pane-label-left">
-              <div class="pane-nav-toolbar" id="paneNewToolbar">
-                <button class="pane-nav-btn" data-action="back" type="button" title="Back">
-                  <svg viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-                <button class="pane-nav-btn" data-action="forward" type="button" title="Forward">
-                  <svg viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-                <button class="pane-nav-btn" data-action="reset" type="button" title="Return to comparison">
-                  <svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 1 1 2.6 5.9M4 12V6M4 12h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-              </div>
-              <span id="paneNewDate" class="mono"></span>
-            </div>
-            <div class="pane-label-right">
-              <span class="pane-tag pane-tag-new">later</span>
-              <button id="paneNewHide" class="pane-expand-btn" type="button" title="Hide this snapshot, show the other one full width">
-                <svg viewBox="0 0 24 24" fill="none"><path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.5 5.3A9.4 9.4 0 0112 5c5 0 9 4 10 7-.4 1.1-1 2.2-1.9 3.2M6.7 6.7C4.8 8 3.4 9.9 2 12c1 3 5 7 10 7 1.4 0 2.7-.3 3.9-.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-              <button id="paneNewExpand" class="pane-expand-btn" type="button" title="View full screen">
-                <svg viewBox="0 0 24 24" fill="none"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-            </div>
-          </div>
-          <div class="pane-frame-wrap">
-            <iframe id="paneNew" class="pane-frame" sandbox="allow-same-origin allow-scripts" title="Later snapshot"></iframe>
-            <div id="paneNewLoading" class="pane-loading"><div class="spinner"></div></div>
-          </div>
-          <button id="paneNewRestore" class="pane-restore-btn" type="button" title="Show later snapshot">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span class="pane-restore-label">Later</span>
-          </button>
-        </div>
-      </div>
+         There were four of them, and a sentence under the word about where
+         the record comes from. The top two, a recording light reading "rec /
+         record playback", and "captures, in order", and that sentence are
+         gone: the screen is the film's and it says what it has to say with
+         the word, the caption that closes it and the caption that says who
+         filmed it, and three more lines of small print over the picture were
+         the page talking over its own ending. -->
+    <section class="section film-band bracketed bracket-light" aria-label="The film">
+      <span class="bracket-tr" aria-hidden="true"></span>
+      <span class="bracket-bl" aria-hidden="true"></span>
 
-      <div id="loadingDiff" class="loading-row" hidden>
-        <div class="spinner"></div>
-        <span>Fetching both snapshots and lining up the differences&hellip;</span>
-      </div>
-    </div>
+      <div class="film-word">
+        <!-- The disc, and the wall of type inside it. The wall is the screen's
+             own promise written small, a record played back capture by capture,
+             which is what the film does, so the circle says something rather
+             than repeating the headline back at itself.
 
-    <aside class="side-column">
-      <div class="side-tabs" role="tablist">
-        <button id="tabChanges" class="side-tab active" type="button">Changes</button>
-        <button id="tabNotes" class="side-tab" type="button">Notes</button>
-        <button id="tabInsight" class="side-tab" type="button">Insight</button>
-      </div>
+             The headline says IN MOTION because that is the feeling this screen
+             has to carry: the Archive did not only keep these captures, it sends
+             them past us again. It is drawn with the same dark outline as the
+             moving rows in the disc behind it (see .film-word .display), so the
+             word and the surrounding type feel printed on the same living surface.
 
-      <div id="panelChanges" class="side-panel">
-        <ul id="changesList" class="changes-list"></ul>
-        <p id="noChangesMsg" class="muted small" hidden>No structural differences found between these two snapshots.</p>
-      </div>
+             So the phrase stands ABOVE and BELOW the headline and never behind
+             it: the line between the two walls is a spacer exactly the height of
+             the word's own line (see .film-row-gap), and the word is set across
+             the middle of the circle with clean red on both sides of it.
 
-      <div id="panelNotes" class="side-panel" hidden>
-        <div id="notesList" class="notes-list"></div>
-        <div class="notes-edit">
-          <textarea id="notesArea" class="notes-area" placeholder="Write a new note about this site. Notes follow you here whenever you come back to trace this same address, no matter which dates you're comparing."></textarea>
-          <div class="notes-edit-actions">
-            <button id="notesSaveBtn" class="primary-btn notes-save-btn" type="button" disabled>Save note</button>
+             Each row is the phrase three times over on a belt of its own, turning
+             slowly left, and each belt runs at its own pace so the rows never
+             line up: one surface of outlined type moving under the word. Three
+             copies and a move of exactly one copy means a belt only ever shows
+             type, with no seam and no end to catch the eye. Nothing here carries
+             data-reveal: a dealt arrival would fight the breathing, and the
+             breathing is its arrival. -->
+        <div class="film-disc" aria-hidden="true">
+          <div class="film-disc-rows">
+            <div class="film-row"><span>Capture by capture</span><span>Capture by capture</span><span>Capture by capture</span></div>
+            <div class="film-row"><span>Capture by capture</span><span>Capture by capture</span><span>Capture by capture</span></div>
+            <div class="film-row"><span>Capture by capture</span><span>Capture by capture</span><span>Capture by capture</span></div>
+            <div class="film-row"><span>Capture by capture</span><span>Capture by capture</span><span>Capture by capture</span></div>
+            <div class="film-row film-row-gap"></div>
+            <div class="film-row"><span>Capture by capture</span><span>Capture by capture</span><span>Capture by capture</span></div>
+            <div class="film-row"><span>Capture by capture</span><span>Capture by capture</span><span>Capture by capture</span></div>
+            <div class="film-row"><span>Capture by capture</span><span>Capture by capture</span><span>Capture by capture</span></div>
+            <div class="film-row"><span>Capture by capture</span><span>Capture by capture</span><span>Capture by capture</span></div>
           </div>
         </div>
-        <p id="notesStatus" class="muted small">&nbsp;</p>
+        <h2 class="display display-red" data-reveal="letters">In motion</h2>
       </div>
 
-      <div id="panelInsight" class="side-panel" hidden>
-        <div id="insightIdle" class="insight-idle">
-          <p class="muted small">Ask Claude to research what likely caused this change and why it might matter, using real web context from around these dates.</p>
-          <button id="generateInsightBtn" class="secondary-btn" type="button">Generate insight</button>
-        </div>
-        <div id="insightLoading" class="loading-row" hidden>
-          <div class="spinner"></div>
-          <span>Researching this change&hellip;</span>
-        </div>
-        <div id="insightResult" class="insight-result" hidden>
-          <p id="insightText"></p>
-          <div id="insightSources" class="insight-sources"></div>
-          <button id="regenerateInsightBtn" class="text-btn" type="button">Regenerate</button>
-        </div>
-        <p id="insightError" class="error-text small" hidden></p>
+      <!-- THE FOOT OF THE SCREEN: two credits and the way out.
+
+           One element, because they are one row. They were three absolutely
+           positioned pieces of furniture sharing the frame's foot line, which
+           is exactly right on a window wide enough to hold all three side by
+           side and exactly wrong on one that is not: at a phone's width the two
+           credits ran into each other and both ran through the link. As a grid
+           they are three columns on a wide screen (credit, link, credit) and
+           three centred lines under the word on a narrow one, in the reading
+           order they are written in - the two credits first, then the link. -->
+      <div class="film-foot">
+        <span class="film-corner film-corner-bl" data-reveal="block">Every capture the Archive kept</span>
+        <span class="film-corner film-corner-br" data-reveal="block">
+          Filmed by the Wayback Machine <i class="film-dot" aria-hidden="true"></i>
+        </span>
+        <p class="film-cta-row" data-reveal="block">
+          <a class="film-cta" href="/compare">
+            Play a record <span aria-hidden="true">&rarr;</span>
+          </a>
+        </p>
       </div>
-    </aside>
-  </section>
-  </div>
+    </section>
+  </main>
+</div>
 
-  <footer class="site-footer">
-    <p>Snapshots are pulled live from the <a href="https://web.archive.org" target="_blank" rel="noopener">Internet Archive's Wayback Machine</a>. Palimpsest doesn't alter or endorse archived content, it just shows you where it changed.</p>
-  </footer>
+<!-- There is no progress dot at the sheet's edge any more: see the note where
+     it used to be styled, in theme.css. Nothing has taken its place. -->
 
-  <div id="paneModal" class="pane-modal" hidden>
-    <div id="paneModalBackdrop" class="pane-modal-backdrop"></div>
-    <div class="pane-modal-panel">
-      <div class="pane-modal-header">
-        <div class="pane-nav-toolbar pane-nav-toolbar-modal" id="modalToolbar">
-          <button class="pane-nav-btn" data-action="back" type="button" title="Back">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-          <button class="pane-nav-btn" data-action="forward" type="button" title="Forward">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-          <button class="pane-nav-btn" data-action="reset" type="button" title="Return to comparison">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 1 1 2.6 5.9M4 12V6M4 12h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-        </div>
-        <span id="modalDateLabel" class="mono"></span>
-        <button id="paneModalClose" class="pane-modal-close" type="button" title="Close">&times;</button>
-      </div>
-      <iframe id="modalFrame" class="pane-modal-frame" sandbox="allow-same-origin allow-scripts" title="Full screen snapshot"></iframe>
-    </div>
-  </div>
+<!-- THE PLACE, PUT BACK, WITH A PAGE UNDER IT TO PUT IT BACK ON.
 
-  <div id="changeDetailTooltip" class="change-tooltip" hidden>
-    <div class="change-tooltip-header">
-      <span id="changeDetailBadge" class="change-badge"></span>
-      <span id="changeDetailTag" class="mono change-tag"></span>
-    </div>
-    <p id="changeDetailPath" class="mono change-detail-path"></p>
+     The decision was made in the head (see the note there), but the correction
+     cannot be made there: the head is parsed before there is a page to scroll,
+     and window.scrollTo on an empty document is a number that clamps to zero.
+     This is the last script in the document and the parser has not yielded, so
+     the reader has not seen a frame yet: the first frame they do see is the one
+     this leaves behind, whether that is the top or the place they were. -->
+<script>
+  (function () {
+    var at = window.palimpsestScroll;
+    if (at === null || at === undefined) return;
+    var root = document.documentElement;
+    var was = root.style.scrollBehavior;
+    root.style.scrollBehavior = 'auto';
+    window.scrollTo(0, at);
+    root.style.scrollBehavior = was;
+  })();
+</script>
 
-    <ul id="changeDetailVisibilityList" class="change-note-list" hidden></ul>
-
-    <div id="changeDetailTextPair" class="change-detail-section">
-      <div id="changeDetailBefore" class="change-detail-block before"></div>
-      <div id="changeDetailArrow" class="change-detail-arrow">&darr;</div>
-      <div id="changeDetailAfter" class="change-detail-block after"></div>
-    </div>
-    <div id="changeDetailSameText" class="change-detail-block same" hidden></div>
-
-    <div id="changeDetailLinkSection" class="change-detail-section" hidden>
-      <h4>What changed about the link</h4>
-      <p id="changeDetailLinkNote" class="change-detail-note"></p>
-      <button id="changeDetailTraceBtn" class="text-btn" type="button" hidden>Trace this page's own history &rarr;</button>
-    </div>
-
-    <div id="changeDetailAppearanceSection" class="change-detail-section" hidden>
-      <h4>Appearance also changed</h4>
-      <ul id="changeDetailAppearanceList" class="change-attr-list"></ul>
-    </div>
-
-    <div id="changeDetailAttrSection" class="change-detail-section" hidden>
-      <h4>Other attributes</h4>
-      <ul id="changeDetailAttrList" class="change-attr-list"></ul>
-    </div>
-  </div>
-
-
-  <div id="dashboardModal" class="dash-modal" hidden>
-    <div id="dashboardBackdrop" class="dash-modal-backdrop"></div>
-    <div class="dash-modal-panel">
-      <div class="dash-modal-header">
-        <div class="dash-modal-heading">
-          <h3 id="dashSiteName" class="dash-title">&nbsp;</h3>
-          <p id="dashSubtitle" class="muted small"></p>
-        </div>
-        <button id="dashModalClose" class="pane-modal-close" type="button" title="Close">&times;</button>
-      </div>
-
-      <div class="dash-body" id="dashBody">
-
-        <div class="dash-kpi-row" id="dashKpiRow"></div>
-
-        <!-- The only control the dashboard has: which stretch of the record to
-             look at, as one range written the way it reads. The resolution and
-             grouping the charts use are fixed; the series are always all three. -->
-        <div class="dash-range-row" id="dashRangeFilter" hidden>
-          <select id="dashRangeFrom" class="dash-range-select" aria-label="Start of the range"></select>
-          <span class="dash-range-arrow" aria-hidden="true">&rarr;</span>
-          <select id="dashRangeTo" class="dash-range-select" aria-label="End of the range"></select>
-          <button id="dashRangeReset" class="dash-reset-btn" type="button">Reset</button>
-        </div>
-
-        <div class="dash-card dash-card-main">
-          <div class="dash-card-header">
-            <h4>Change activity over time</h4>
-            <span class="muted small" id="dashActivityHint">Click any bar to open that comparison</span>
-          </div>
-          <div class="dash-chart-wrap" id="dashActivityChart"></div>
-        </div>
-
-        <div class="dash-grid-2">
-          <div class="dash-card">
-            <div class="dash-card-header">
-              <h4>Change composition</h4>
-              <span class="muted small" id="dashCompositionHint">Across everything analyzed</span>
-            </div>
-            <div class="dash-chart-wrap dash-chart-small" id="dashCompositionChart"></div>
-          </div>
-          <div class="dash-card">
-            <div class="dash-card-header">
-              <h4>What tends to change</h4>
-              <span class="muted small" id="dashTagHint">By element type</span>
-            </div>
-            <div class="dash-chart-wrap dash-chart-small" id="dashTagChart"></div>
-          </div>
-        </div>
-
-        <div class="dash-card">
-          <div class="dash-card-header">
-            <h4>Archive coverage</h4>
-            <span class="muted small">Gaps mean the crawler didn't visit, not that nothing changed</span>
-          </div>
-          <div class="dash-chart-wrap" id="dashCadenceChart"></div>
-          <div id="dashGapBreakdown" class="dash-gap-breakdown"></div>
-        </div>
-
-        <div class="dash-card">
-          <div class="dash-card-header">
-            <h4>Largest differences between snapshots</h4>
-            <span class="muted small">Between two captures, not one event</span>
-          </div>
-          <div id="dashLeaderboard" class="dash-leaderboard"></div>
-        </div>
-
-      </div>
-    </div>
-  </div>
-
-  <div id="dashTooltip" class="dash-tooltip" hidden></div>
-
-  <!-- The timelapse: the same record played back as a film. Two stacked
-       iframes so one frame can dissolve into the next instead of blinking. -->
-  <div id="timelapseModal" class="tl-modal" hidden>
-    <div id="timelapseBackdrop" class="tl-modal-backdrop"></div>
-    <div class="tl-panel">
-      <div class="tl-header">
-        <div class="tl-heading">
-          <h3 id="tlSiteName" class="tl-title">&nbsp;</h3>
-          <p id="tlSubtitle" class="muted small"></p>
-        </div>
-        <div class="tl-header-actions">
-          <!-- The film can be kept. It sits beside the close button because it
-               is the other thing you can do to the film as a whole. -->
-          <button id="tlDownloadBtn" class="tl-icon-btn tl-head-btn" type="button"
-                  title="Download the film as a video" aria-label="Download the film as a video">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0 4-4m-4 4-4-4M5 17.5V19a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-1.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-          <button id="tlModalClose" class="pane-modal-close" type="button" title="Close">&times;</button>
-        </div>
-      </div>
-
-      <div class="tl-body">
-        <!-- The stage is a browser window, because that is what an archived
-             page is: one address, frozen at one moment. -->
-        <div class="tl-stage">
-          <div class="tl-chrome">
-            <span class="tl-lights"><i></i><i></i><i></i></span>
-            <span class="tl-addr mono" id="tlAddress"></span>
-          </div>
-          <div class="tl-viewport" id="tlViewport">
-            <iframe id="tlFrameA" class="tl-frame" sandbox="allow-same-origin" title="Archived snapshot"></iframe>
-            <iframe id="tlFrameB" class="tl-frame" sandbox="allow-same-origin" title="Archived snapshot"></iframe>
-
-            <!-- Date is the one thing a timelapse has to state out loud: every
-                 frame is a capture, and without its date the film is just a
-                 page flickering. -->
-            <div class="tl-datecard" id="tlDateCard">
-              <span class="tl-date-eyebrow">Captured</span>
-              <span class="tl-date" id="tlDate">&nbsp;</span>
-              <span class="tl-date-gap" id="tlDateGap"></span>
-            </div>
-
-            <div class="tl-delta" id="tlDelta"></div>
-
-            <!-- Phase one: the whole record is retrieved before the film is
-                 allowed to start. This card is that wait, stated honestly:
-                 what it is doing, how far along, and how long is left. -->
-            <div class="tl-loader" id="tlLoader">
-              <div class="tl-load-card">
-                <span class="tl-load-eyebrow">Filing the record</span>
-                <p class="tl-load-title" id="tlLoaderText">Retrieving capture 0 of 0</p>
-                <div class="tl-load-bar"><div class="tl-load-fill" id="tlLoadFill"></div></div>
-                <p class="tl-load-sub" id="tlLoadSub">&nbsp;</p>
-              </div>
-            </div>
-
-            <!-- Separate from the loader on purpose. The loader means "there
-                 is nothing to show yet" and covers the stage. This means "the
-                 frame you're watching is fine, the next one is still on its
-                 way", which must never blank a page that is already there. -->
-            <div class="tl-buffer" id="tlBuffer" hidden>
-              <span class="tl-buffer-dot"></span>
-              <span id="tlBufferText">fetching the next capture</span>
-            </div>
-
-            <!-- The download, while it is being set up. It is a card over the
-                 stage here; once it starts recording it becomes a row under
-                 the transport instead, because the transport is outside the
-                 frame the recorder is cutting and this is not. -->
-            <div class="tl-export" id="tlExport" hidden>
-              <div class="tl-export-card">
-                <span class="tl-load-eyebrow">Download the film</span>
-                <p class="tl-export-title" id="tlExportTitle">&nbsp;</p>
-                <p class="tl-export-sub" id="tlExportSub"></p>
-                <div class="tl-export-row">
-                  <span class="tl-export-label">Seconds per capture</span>
-                  <div class="tl-speeds" role="group" aria-label="Seconds per capture">
-                    <button type="button" class="tl-speed tl-export-pace" data-pace="0.25">0.25</button>
-                    <button type="button" class="tl-speed tl-export-pace is-active" data-pace="0.5">0.5</button>
-                    <button type="button" class="tl-speed tl-export-pace" data-pace="1">1</button>
-                  </div>
-                  <span class="tl-export-time mono" id="tlExportTime"></span>
-                </div>
-                <div class="tl-export-actions">
-                  <button id="tlExportStart" class="tl-btn-primary" type="button">Start recording</button>
-                  <button id="tlExportCancel" class="tl-btn-ghost" type="button">Not now</button>
-                </div>
-                <p class="tl-export-note" id="tlExportNote"></p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Transport. The rail is the timeline again, at film scale: one tick
-             per frame, tall enough to show how much changed at that capture. -->
-        <div class="tl-transport">
-          <div class="tl-rail-wrap" id="tlRailWrap">
-            <div class="tl-rail" id="tlRail">
-              <div class="tl-rail-line"></div>
-              <div class="tl-rail-fill" id="tlRailFill"></div>
-              <div class="tl-rail-ticks" id="tlRailTicks"></div>
-              <div class="tl-rail-head" id="tlRailHead"></div>
-            </div>
-            <div class="tl-rail-ends">
-              <span id="tlFirstDate" class="muted mono"></span>
-              <span id="tlLastDate" class="muted mono"></span>
-            </div>
-          </div>
-
-          <!-- The runway, stated. The frames just ahead of the playhead are
-               loaded before Play unlocks, so the film starts full rather than
-               stalling on its first transition. It disappears when they are. -->
-          <div class="tl-prepare" id="tlPrepare" hidden>
-            <span class="tl-prepare-label" id="tlPrepareLabel"></span>
-            <div class="tl-prepare-bar"><div class="tl-prepare-fill" id="tlPrepareFill"></div></div>
-          </div>
-
-          <div class="tl-controls" id="tlControls">
-            <button id="tlRestart" class="tl-icon-btn" type="button" title="Back to the first capture">
-              <svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 1 1 2.6 5.9M4 12V6M4 12h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-            <button id="tlPlay" class="tl-play" type="button" title="Play" aria-label="Play the timelapse">
-              <svg class="tl-icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
-              <svg class="tl-icon-pause" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5h3.2v14H8zM12.8 5H16v14h-3.2z"/></svg>
-            </button>
-            <span class="tl-counter mono" id="tlCounter">0 / 0</span>
-            <div class="tl-speeds" role="group" aria-label="Playback speed">
-              <button type="button" class="tl-speed" data-speed="0.5">0.5&times;</button>
-              <button type="button" class="tl-speed is-active" data-speed="1">1&times;</button>
-              <button type="button" class="tl-speed" data-speed="2">2&times;</button>
-              <button type="button" class="tl-speed" data-speed="4">4&times;</button>
-              <button type="button" class="tl-speed" data-speed="8">8&times;</button>
-              <button type="button" class="tl-speed" data-speed="16">16&times;</button>
-            </div>
-          </div>
-
-          <!-- What the download becomes while it runs: a row under the stage,
-               outside the crop the recorder is cutting, so the file holds the
-               film and not the film plus its own progress bar. -->
-          <div class="tl-recording" id="tlRecording" hidden>
-            <span class="tl-rec-dot" id="tlRecDot"></span>
-            <span class="tl-rec-label" id="tlRecLabel"></span>
-            <span class="tl-rec-time mono" id="tlRecTime"></span>
-            <button id="tlRecAction" class="tl-btn-ghost" type="button">Stop &amp; save</button>
-            <button id="tlRecDone" class="tl-btn-ghost" type="button" hidden>Back to the film</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script src="/app.js"></script>
-  <script src="/archiveStore.js"></script>
-  <script src="/dashboard.js"></script>
-  <script src="/timelapse.js"></script>
+<script src="/theme.js?v=26" defer></script>
 </body>
 </html>

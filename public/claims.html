@@ -3,38 +3,68 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- The sections collapse into a menu on a narrow window, and the class that
+     says so is set before the page is parsed, so the bar is never painted with
+     four labels that then become a button. Without it the row stands as it
+     always has (see the menu block in theme.css): the button is an addition to
+     the page, never a condition of it. -->
+<script>document.documentElement.classList.add('nav-js');</script>
+<meta name="view-transition" content="same-origin" />
 <title>Claim records · Palimpsest</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- The display face is not fetched from the font host at all. It is the face
+     the giant word is set in, and its widths are what place every mark beside
+     it, so it is served from this origin and preloaded here: the word is then
+     painted in the face it keeps, from the first paint, and there is no wrong
+     state to move out of. Oswald is a variable font, so one pair of files
+     carries every weight (see the @font-face notes in theme.css). Everything
+     else on the page still comes from the font host and still swaps. -->
+<link rel="preload" href="/fonts/oswald-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
 <link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16" />
 <link rel="icon" href="/favicon.ico" sizes="any" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
-<link rel="stylesheet" href="/styles.css" />
+<link rel="stylesheet" href="/styles.css?v=6" />
+<link rel="stylesheet" href="/theme.css?v=40" />
 </head>
 <body class="claims-page">
 
-  <div class="page-main">
-  <header class="topbar">
-    <div class="wordmark">
-      <span class="wordmark-text">Palimpsest</span>
-      <span class="wordmark-sub">claim records</span>
-    </div>
-    <div class="topbar-end">
-      <span class="tagline">the old text, still visible under the new</span>
-      <a class="topbar-back" href="/">
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 12H6.5M11.5 7l-5 5 5 5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Back
+<div class="paper-frame">
+  <header class="site-head">
+    <nav class="site-nav" aria-label="Palimpsest sections">
+      <a class="brand" href="/" aria-label="Palimpsest, front page">
+        <span class="brand-word">Palimpsest</span>
       </a>
-    </div>
+
+      <!-- The button and the row are two states of ONE list. The links are
+           not copied into a menu: the same four anchors are the row on a wide
+           window and the panel under the bar on a narrow one, so the page a
+           reader is on, and the address they typed (theme.js carries it into
+           every link), are written in one place. The button comes before the
+           list so the keyboard meets it before what it opens. -->
+      <button class="nav-toggle" type="button" id="navToggle" aria-expanded="false" aria-controls="navMenu">
+        <span class="nav-bars" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="visually-hidden">Sections</span>
+      </button>
+      <div class="nav-links" id="navMenu">
+        <a class="nav-link" href="/compare"><span class="nav-text"><span class="nav-full">Compare snapshots</span><span class="nav-short">Compare</span></span></a>
+        <a class="nav-link is-current" href="/claims" aria-current="page">
+          <span class="nav-text">Claims</span>
+        </a>
+        <a class="nav-link" href="/settlement"><span class="nav-text">Settlement</span></a>
+        <a class="nav-link" href="/sustainability"><span class="nav-text">Sustainability</span></a>
+      </div>
+    </nav>
   </header>
+
+  <div class="page-main">
 
   <section class="hero">
     <div class="hero-inner">
-      <span class="hero-eyebrow hero-eyebrow-warn">Commitments, kept and dropped</span>
-      <h1>What did this site <br />stop promising?</h1>
+      <h1>What did this site stop promising<span class="display-dot">?</span></h1>
       <p class="hero-sub">
         Give it an address. It reads the archived versions of that page, finds the promises made on
         it, and shows the day each one stopped being said.
@@ -49,6 +79,7 @@
         <span class="example-label">or try</span>
         <button type="button" class="chip" data-url="sustainability.google">sustainability.google</button>
         <button type="button" class="chip" data-url="settlement.org">settlement.org</button>
+        <a class="chip" href="/sustainability">sustainability research &rarr;</a>
       </div>
 
       <div id="cwProgress" class="cw-progress" hidden>
@@ -226,8 +257,16 @@
 
   <footer class="site-footer">
     <p>Snapshots are pulled live from the <a href="https://web.archive.org" target="_blank" rel="noopener">Internet Archive's Wayback Machine</a>. Palimpsest doesn't alter or endorse archived content, it just shows you where it changed.</p>
+    <nav class="footer-nav" aria-label="Palimpsest sections">
+      <a href="/">Palimpsest</a>
+      <a href="/compare">Compare snapshots</a>
+      <a href="/settlement">Settlement</a>
+      <a href="/sustainability">Sustainability</a>
+    </nav>
   </footer>
+</div>
 
   <script src="/claims.js"></script>
+  <script src="/theme.js?v=26"></script>
 </body>
 </html>

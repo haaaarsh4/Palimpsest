@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- The sections collapse into a menu on a narrow window, and the class that
+     says so is set before the page is parsed, so the bar is never painted with
+     four labels that then become a button. Without it the row stands as it
+     always has (see the menu block in theme.css): the button is an addition to
+     the page, never a condition of it. -->
+<script>document.documentElement.classList.add('nav-js');</script>
+<meta name="view-transition" content="same-origin" />
+<title>Settlement · Palimpsest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<!-- The display face is not fetched from the font host at all. It is the face
+     the giant word is set in, and its widths are what place every mark beside
+     it, so it is served from this origin and preloaded here: the word is then
+     painted in the face it keeps, from the first paint, and there is no wrong
+     state to move out of. Oswald is a variable font, so one pair of files
+     carries every weight (see the @font-face notes in theme.css). Everything
+     else on the page still comes from the font host and still swaps. -->
+<link rel="preload" href="/fonts/oswald-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+<link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16" />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+<link rel="stylesheet" href="/styles.css?v=6" />
+<link rel="stylesheet" href="/theme.css?v=40" />
+</head>
+<body class="settlement-page">
+
+<div class="paper-frame">
+  <header class="site-head">
+    <nav class="site-nav" aria-label="Palimpsest sections">
+      <a class="brand" href="/" aria-label="Palimpsest, front page">
+        <span class="brand-word">Palimpsest</span>
+      </a>
+
+      <!-- The button and the row are two states of ONE list. The links are
+           not copied into a menu: the same four anchors are the row on a wide
+           window and the panel under the bar on a narrow one, so the page a
+           reader is on, and the address they typed (theme.js carries it into
+           every link), are written in one place. The button comes before the
+           list so the keyboard meets it before what it opens. -->
+      <button class="nav-toggle" type="button" id="navToggle" aria-expanded="false" aria-controls="navMenu">
+        <span class="nav-bars" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="visually-hidden">Sections</span>
+      </button>
+      <div class="nav-links" id="navMenu">
+        <a class="nav-link" href="/compare"><span class="nav-text"><span class="nav-full">Compare snapshots</span><span class="nav-short">Compare</span></span></a>
+        <a class="nav-link" href="/claims"><span class="nav-text">Claims</span></a>
+        <a class="nav-link is-current" href="/settlement" aria-current="page">
+          <span class="nav-text">Settlement</span>
+        </a>
+        <a class="nav-link" href="/sustainability"><span class="nav-text">Sustainability</span></a>
+      </div>
+    </nav>
+  </header>
+
+  <div class="page-main">
+
+  <section class="hero">
+    <div class="hero-inner">
+      <h1>What settlement sites told newcomers<span class="display-dot">.</span></h1>
+      <p class="hero-sub">
+        Give it an address. It reads the archived versions of a settlement site, year by year,
+        and shows what the site offered newcomers and what it stopped offering.
+      </p>
+
+      <form id="srForm" class="url-form" autocomplete="off">
+        <input id="srInput" type="text" placeholder="e.g. settlement.org, canada.ca" required />
+        <button id="srGo" type="submit">Read the record</button>
+      </form>
+
+      <div class="example-chips">
+        <span class="example-label">or try</span>
+        <button type="button" class="chip" data-url="settlement.org">settlement.org</button>
+        <button type="button" class="chip" data-url="canada.ca">canada.ca</button>
+      </div>
+
+      <p id="srNote" class="muted small" hidden></p>
+    </div>
+  </section>
+  </div>
+
+  <footer class="site-footer">
+    <p>Snapshots are pulled live from the <a href="https://web.archive.org" target="_blank" rel="noopener">Internet Archive's Wayback Machine</a>. Palimpsest doesn't alter or endorse archived content, it just shows you where it changed.</p>
+  </footer>
+</div>
+
+  <script src="/settlement.js"></script>
+  <script src="/theme.js?v=26"></script>
+</body>
+</html>

@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- The sections collapse into a menu on a narrow window, and the class that
+     says so is set before the page is parsed, so the bar is never painted with
+     four labels that then become a button. Without it the row stands as it
+     always has (see the menu block in theme.css): the button is an addition to
+     the page, never a condition of it. -->
+<script>document.documentElement.classList.add('nav-js');</script>
+<meta name="view-transition" content="same-origin" />
+<title>Compare snapshots · Palimpsest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<!-- The display face is not fetched from the font host at all. It is the face
+     the giant word is set in, and its widths are what place every mark beside
+     it, so it is served from this origin and preloaded here: the word is then
+     painted in the face it keeps, from the first paint, and there is no wrong
+     state to move out of. Oswald is a variable font, so one pair of files
+     carries every weight (see the @font-face notes in theme.css). Everything
+     else on the page still comes from the font host and still swaps. -->
+<link rel="preload" href="/fonts/oswald-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+<link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16" />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+<link rel="stylesheet" href="/styles.css?v=6" />
+<link rel="stylesheet" href="/theme.css?v=40" />
+<link rel="stylesheet" href="/compare.css?v=5" />
+<script>
+  // No animated glide on the way in. The stylesheet asks for smooth scrolling
+  // everywhere, which also smooths the browser's own scroll restoration on a
+  // reload or a navigation — the page lands somewhere, then visibly drifts a
+  // few pixels to its spot. So the page starts instant and only becomes smooth
+  // once it is loaded and settled; the scrolls the app makes later (after a
+  // trace or a comparison) choose their own behavior explicitly.
+  document.documentElement.style.scrollBehavior = 'auto';
+  window.addEventListener('load', function () {
+    setTimeout(function () { document.documentElement.style.scrollBehavior = ''; }, 350);
+  });
+</script>
+</head>
+<body class="compare-page">
+
+<div class="paper-frame">
+  <header class="site-head">
+    <nav class="site-nav" aria-label="Palimpsest sections">
+      <a class="brand" href="/" aria-label="Palimpsest, front page">
+        <span class="brand-word">Palimpsest</span>
+      </a>
+
+      <!-- The button and the row are two states of ONE list. The links are
+           not copied into a menu: the same four anchors are the row on a wide
+           window and the panel under the bar on a narrow one, so the page a
+           reader is on, and the address they typed (theme.js carries it into
+           every link), are written in one place. The button comes before the
+           list so the keyboard meets it before what it opens. -->
+      <button class="nav-toggle" type="button" id="navToggle" aria-expanded="false" aria-controls="navMenu">
+        <span class="nav-bars" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="visually-hidden">Sections</span>
+      </button>
+      <div class="nav-links" id="navMenu">
+        <a class="nav-link is-current" href="/compare" aria-current="page">
+          <span class="nav-text"><span class="nav-full">Compare snapshots</span><span class="nav-short">Compare</span></span>
+        </a>
+        <a class="nav-link" href="/claims"><span class="nav-text">Claims</span></a>
+        <a class="nav-link" href="/settlement"><span class="nav-text">Settlement</span></a>
+        <a class="nav-link" href="/sustainability"><span class="nav-text">Sustainability</span></a>
+      </div>
+    </nav>
+  </header>
+
+  <!-- The fine print is written here, before the page it closes, and put back
+       under it by the sheet's flex order (see .paper-frame's order rules in
+       theme.css). This is the whole reason the card used to land low and then
+       step up out of it: the card is centered in what is left of the first
+       screen once the head and the foot have taken theirs, and the foot was
+       the end of a document two hundred lines long. The browser painted the
+       first screenful as soon as the card existed - no foot yet - so the card
+       was centered in a screen with no fine print in it, 39px too low, and
+       moved up the moment the foot arrived. The height it is centered against
+       is now in the document before the card is, at every window shape, with
+       no height written down anywhere and nothing to correct after the fact. -->
+  <footer class="site-footer">
+    <p>
+      Snapshots are pulled live from the
+      <a href="https://web.archive.org" target="_blank" rel="noopener">Internet Archive's Wayback Machine</a>.
+      Palimpsest doesn't alter or endorse archived content, it just shows you where it changed.
+    </p>
+    <nav class="footer-nav" aria-label="Palimpsest sections">
+      <a href="/">Palimpsest</a>
+      <a href="/claims">Claims</a>
+      <a href="/settlement">Settlement</a>
+      <a href="/sustainability">Sustainability</a>
+    </nav>
+  </footer>
+
+  <main class="page-main compare-shell">
+
+    <!-- The address, stated once, and the same form the front page carries. It
+         is a form here rather than a link away, because this is the page that
+         can act on it: the trace runs where the reader is standing. -->
+    <section class="section section-tight page-hero">
+      <div class="page-hero-inner">
+        <h1 id="compareHeading">What changed between two snapshots<span class="display-dot">.</span></h1>
+        <p class="hero-sub">
+          Put an address in and the record is read from the Wayback Machine. Then pick any two
+          captures on the timeline below. The difference between them is marked on the pages
+          themselves, sentence by sentence.
+        </p>
+
+        <form id="urlForm" class="url-form" autocomplete="off">
+          <input id="urlInput" type="text"
+                 placeholder="e.g. settlement.org, nytimes.com"
+                 aria-label="Website address to trace" required />
+          <button id="traceBtn" type="submit"><span id="traceBtnText">Search</span></button>
+        </form>
+        <div class="example-chips chips">
+          <span class="example-label chips-label">or try</span>
+          <button type="button" class="chip" data-url="apple.com">apple.com</button>
+          <button type="button" class="chip" data-url="nytimes.com">nytimes.com</button>
+          <button type="button" class="chip" data-url="airbnb.com">airbnb.com</button>
+        </div>
+
+        <div id="siteLoading" class="loading-row" hidden style="margin-top:22px">
+          <div class="spinner"></div>
+          <span class="loading-label">Pulling the archive history for this address&hellip;</span><span class="loading-eta"></span>
+        </div>
+
+        <p id="urlError" class="error-text" hidden></p>
+      </div>
+    </section>
+
+    <section id="timelineSection" class="timeline-section" hidden>
+      <div class="timeline-header">
+        <div>
+          <h2 id="timelineSiteName">&nbsp;</h2>
+          <p id="timelineMeta" class="muted"></p>
+        </div>
+        <div class="timeline-header-actions">
+          <button id="openDashboardBtn" class="secondary-btn dash-open-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4 20V10M11 20V4M18 20v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Site dashboard
+          </button>
+          <button id="openTimelapseBtn" class="secondary-btn dash-open-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7.5v4.8l3.1 1.9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Timelapse
+          </button>
+        </div>
+      </div>
+
+      <div class="timeline-track-wrap">
+        <div id="timelineTrack" class="timeline-track">
+          <div class="track-line"></div>
+          <div id="tickLayer" class="tick-layer"></div>
+          <div id="rangeFill" class="range-fill"></div>
+          <button id="handleFrom" class="handle handle-from" aria-label="Earlier date" type="button"></button>
+          <button id="handleTo" class="handle handle-to" aria-label="Later date" type="button"></button>
+        </div>
+        <div class="track-endpoints">
+          <span id="earliestLabel" class="muted mono"></span>
+          <span id="latestLabel" class="muted mono"></span>
+        </div>
+      </div>
+
+      <div class="selection-bar">
+        <div class="selection-dates">
+          <div class="selection-date">
+            <span class="selection-label">From</span>
+            <input id="fromDate" class="mono selection-value selection-input" type="text"
+                   autocomplete="off" spellcheck="false" aria-label="Earlier capture date" />
+          </div>
+          <div class="selection-arrow">&rarr;</div>
+          <div class="selection-date">
+            <span class="selection-label">To</span>
+            <input id="toDate" class="mono selection-value selection-input" type="text"
+                   autocomplete="off" spellcheck="false" aria-label="Later capture date" />
+          </div>
+        </div>
+        <button id="compareBtn" class="primary-btn" disabled>Compare snapshots</button>
+      </div>
+    </section>
+
+    <section id="workspace" class="workspace" hidden>
+      <div class="viewer-column">
+        <div class="viewer-toolbar">
+          <div class="viewer-actions">
+            <button id="comparePagesBtn" class="secondary-btn compare-pages-btn" type="button" disabled
+                    title="Diff the two pages the panes are showing right now. After following links inside them, the changes list no longer matches, so this rebuilds it for the open subpages.">Compare open pages</button>
+            <button id="copyLinkBtn" class="secondary-btn copy-link-btn" type="button" disabled
+                    title="Copy a link to this exact comparison. Opening it reads the same two captures and rebuilds this view, changes list and all.">Copy link</button>
+          </div>
+          <div class="viewer-toolbar-right">
+            <div id="changeCounts" class="change-counts"></div>
+          </div>
+        </div>
+
+        <div id="viewerPanes" class="viewer-panes">
+          <div class="pane">
+            <div class="pane-label">
+              <div class="pane-label-left">
+                <div class="pane-nav-toolbar" id="paneOldToolbar">
+                  <button class="pane-nav-btn" data-action="back" type="button" title="Back">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                  <button class="pane-nav-btn" data-action="forward" type="button" title="Forward">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                  <button class="pane-nav-btn" data-action="refresh" type="button" title="Reload this page">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                  <button class="pane-nav-btn" data-action="reset" type="button" title="Return to comparison">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M4 12l8-8 8 8M6 10.5V20h12v-9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                </div>
+                <span id="paneOldDate" class="mono"></span>
+              </div>
+              <div class="pane-label-right">
+                <span class="pane-tag">earlier</span>
+                <button id="paneOldHide" class="pane-expand-btn" type="button" title="Hide this snapshot, show the other one full width">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.5 5.3A9.4 9.4 0 0112 5c5 0 9 4 10 7-.4 1.1-1 2.2-1.9 3.2M6.7 6.7C4.8 8 3.4 9.9 2 12c1 3 5 7 10 7 1.4 0 2.7-.3 3.9-.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <button id="paneOldExpand" class="pane-expand-btn" type="button" title="View full screen">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="pane-addressbar">
+              <button id="paneOldArchiveBtn" class="pane-archive-btn" type="button" title="Show the archived address">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4" width="17" height="5" rx="1.5" stroke="currentColor" stroke-width="1.8"/><path d="M5 8v9.5A1.5 1.5 0 0 0 6.5 19h11a1.5 1.5 0 0 0 1.5-1.5V8" stroke="currentColor" stroke-width="1.8"/><path d="M10 12.5h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+              <input id="paneOldUrl" class="pane-url mono" type="text" spellcheck="false" autocomplete="off"
+                     aria-label="Earlier pane address. Type an address and press Enter to go there." />
+            </div>
+            <div class="pane-frame-wrap">
+              <iframe id="paneOld" class="pane-frame" sandbox="allow-same-origin allow-scripts" title="Earlier snapshot"></iframe>
+              <div id="paneOldLoading" class="pane-loading"><div class="spinner"></div></div>
+              <!-- The comparison's own badges (the SELECTED word) live here,
+                   in the host page, over the frame: nothing drawn inside the
+                   snapshot can be clipped by the page or painted over by one
+                   of its menus. See paneBadgeLayer in app.js. -->
+              <div id="paneOldBadges" class="pane-badges" aria-hidden="true"></div>
+            </div>
+            <button id="paneOldRestore" class="pane-restore-btn" type="button" title="Show earlier snapshot">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="pane-restore-label">Earlier</span>
+            </button>
+          </div>
+          <div class="pane">
+            <div class="pane-label">
+              <div class="pane-label-left">
+                <div class="pane-nav-toolbar" id="paneNewToolbar">
+                  <button class="pane-nav-btn" data-action="back" type="button" title="Back">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                  <button class="pane-nav-btn" data-action="forward" type="button" title="Forward">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                  <button class="pane-nav-btn" data-action="refresh" type="button" title="Reload this page">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                  <button class="pane-nav-btn" data-action="reset" type="button" title="Return to comparison">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M4 12l8-8 8 8M6 10.5V20h12v-9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                </div>
+                <span id="paneNewDate" class="mono"></span>
+              </div>
+              <div class="pane-label-right">
+                <span class="pane-tag pane-tag-new">later</span>
+                <button id="paneNewHide" class="pane-expand-btn" type="button" title="Hide this snapshot, show the other one full width">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.5 5.3A9.4 9.4 0 0112 5c5 0 9 4 10 7-.4 1.1-1 2.2-1.9 3.2M6.7 6.7C4.8 8 3.4 9.9 2 12c1 3 5 7 10 7 1.4 0 2.7-.3 3.9-.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <button id="paneNewExpand" class="pane-expand-btn" type="button" title="View full screen">
+                  <svg viewBox="0 0 24 24" fill="none"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="pane-addressbar">
+              <button id="paneNewArchiveBtn" class="pane-archive-btn" type="button" title="Show the archived address">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4" width="17" height="5" rx="1.5" stroke="currentColor" stroke-width="1.8"/><path d="M5 8v9.5A1.5 1.5 0 0 0 6.5 19h11a1.5 1.5 0 0 0 1.5-1.5V8" stroke="currentColor" stroke-width="1.8"/><path d="M10 12.5h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+              <input id="paneNewUrl" class="pane-url mono" type="text" spellcheck="false" autocomplete="off"
+                     aria-label="Later pane address. Type an address and press Enter to go there." />
+            </div>
+            <div class="pane-frame-wrap">
+              <iframe id="paneNew" class="pane-frame" sandbox="allow-same-origin allow-scripts" title="Later snapshot"></iframe>
+              <div id="paneNewLoading" class="pane-loading"><div class="spinner"></div></div>
+              <div id="paneNewBadges" class="pane-badges" aria-hidden="true"></div>
+            </div>
+            <button id="paneNewRestore" class="pane-restore-btn" type="button" title="Show later snapshot">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="pane-restore-label">Later</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="loadingDiff" class="loading-row" hidden>
+          <div class="spinner"></div>
+          <span>Fetching both snapshots and lining up the differences&hellip;</span>
+        </div>
+      </div>
+
+      <aside class="side-column">
+        <div class="side-tabs" role="tablist">
+          <button id="tabChanges" class="side-tab active" type="button">Changes</button>
+          <button id="tabNotes" class="side-tab" type="button">Notes</button>
+          <button id="tabInsight" class="side-tab" type="button">Insight</button>
+        </div>
+
+        <div id="panelChanges" class="side-panel">
+          <!-- What the three counts above are for. Clicking one keeps only
+               that kind of change in the list; clicking it again, or Show
+               all, puts the whole record back. The line says what is being
+               looked at out of what, so a filtered list is never a list that
+               silently lost its rows. -->
+          <div id="changeFilterBar" class="change-filter-bar" hidden>
+            <span id="changeFilterNote" class="change-filter-note"></span>
+            <button id="changeFilterClear" class="text-btn" type="button">Show all</button>
+          </div>
+          <div id="loadingChanges" class="loading-row" hidden>
+            <div class="spinner"></div>
+            <span>Reading the changes&hellip;</span>
+          </div>
+          <ul id="changesList" class="changes-list"></ul>
+          <p id="noChangesMsg" class="muted small" hidden>No structural differences found between these two snapshots.</p>
+        </div>
+
+        <div id="panelNotes" class="side-panel" hidden>
+          <div id="notesList" class="notes-list"></div>
+          <div class="notes-edit">
+            <textarea id="notesArea" class="notes-area" placeholder="Write a new note about this site. Notes follow you here whenever you come back to trace this same address, no matter which dates you're comparing."></textarea>
+            <div class="notes-edit-actions">
+              <button id="notesSaveBtn" class="primary-btn notes-save-btn" type="button" disabled>Save note</button>
+            </div>
+          </div>
+          <p id="notesStatus" class="muted small">&nbsp;</p>
+        </div>
+
+        <div id="panelInsight" class="side-panel" hidden>
+          <div id="insightIdle" class="insight-idle">
+            <p class="muted small">Ask Claude to research what likely caused this change and why it might matter, using real web context from around these dates.</p>
+            <button id="generateInsightBtn" class="secondary-btn" type="button">Generate insight</button>
+          </div>
+          <div id="insightLoading" class="loading-row" hidden>
+            <div class="spinner"></div>
+            <span>Researching this change&hellip;</span>
+          </div>
+          <div id="insightResult" class="insight-result" hidden>
+            <p id="insightText"></p>
+            <div id="insightSources" class="insight-sources"></div>
+            <button id="regenerateInsightBtn" class="text-btn" type="button">Regenerate</button>
+          </div>
+          <p id="insightError" class="error-text small" hidden></p>
+        </div>
+      </aside>
+    </section>
+  </main>
+</div>
+
+<div id="paneModal" class="pane-modal" hidden>
+  <div id="paneModalBackdrop" class="pane-modal-backdrop"></div>
+  <div class="pane-modal-panel">
+    <div class="pane-modal-header">
+      <div class="pane-nav-toolbar pane-nav-toolbar-modal" id="modalToolbar">
+        <button class="pane-nav-btn" data-action="back" type="button" title="Back">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="pane-nav-btn" data-action="forward" type="button" title="Forward">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="pane-nav-btn" data-action="refresh" type="button" title="Reload this page">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="pane-nav-btn" data-action="reset" type="button" title="Return to comparison">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M4 12l8-8 8 8M6 10.5V20h12v-9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <span id="modalDateLabel" class="mono"></span>
+      <button id="paneModalClose" class="pane-modal-close" type="button" title="Close">&times;</button>
+    </div>
+    <div class="pane-modal-stage">
+      <iframe id="modalFrame" class="pane-modal-frame" sandbox="allow-same-origin allow-scripts" title="Full screen snapshot"></iframe>
+      <!-- The same veil the two panes wear, over the full-screen frame: a
+           capture's first paint is a second or two of white, and without a
+           spinner that white reads as "full screen is broken". See
+           render() in app.js, which shows and hides `${iframeId}Loading`. -->
+      <div id="modalFrameLoading" class="pane-loading"><div class="spinner"></div></div>
+      <div id="modalFrameBadges" class="pane-badges" aria-hidden="true"></div>
+    </div>
+  </div>
+</div>
+
+<div id="changeDetailTooltip" class="change-tooltip" hidden>
+  <div class="change-tooltip-header">
+    <span id="changeDetailBadge" class="change-badge"></span>
+    <span id="changeDetailTag" class="mono change-tag"></span>
+  </div>
+  <p id="changeDetailWhat" class="change-detail-note"></p>
+  <p id="changeDetailStandIn" class="change-detail-note change-detail-standin" hidden></p>
+  <p id="changeDetailHowTo" class="change-detail-note change-detail-howto" hidden></p>
+  <p id="changeDetailPath" class="mono change-detail-path"></p>
+
+  <ul id="changeDetailVisibilityList" class="change-note-list" hidden></ul>
+
+  <div id="changeDetailTextPair" class="change-detail-section">
+    <div id="changeDetailBefore" class="change-detail-block before"></div>
+    <div id="changeDetailArrow" class="change-detail-arrow">&darr;</div>
+    <div id="changeDetailAfter" class="change-detail-block after"></div>
+  </div>
+  <div id="changeDetailSameText" class="change-detail-block same" hidden></div>
+
+  <div id="changeDetailMediaSection" class="change-detail-section" hidden>
+    <h4 id="changeDetailMediaHeading">The image</h4>
+    <p id="changeDetailMediaNote" class="change-detail-note"></p>
+    <div id="changeDetailMediaPreview" class="change-media-preview"></div>
+  </div>
+
+  <div id="changeDetailLinkSection" class="change-detail-section" hidden>
+    <h4 id="changeDetailLinkHeading">About the link</h4>
+    <p id="changeDetailLinkNote" class="change-detail-note"></p>
+    <button id="changeDetailTraceBtn" class="text-btn" type="button" hidden>Trace this page's own history &rarr;</button>
+  </div>
+
+  <div id="changeDetailAppearanceSection" class="change-detail-section" hidden>
+    <h4>Appearance also changed</h4>
+    <ul id="changeDetailAppearanceList" class="change-attr-list"></ul>
+  </div>
+
+  <div id="changeDetailAttrSection" class="change-detail-section" hidden>
+    <h4>Other attributes</h4>
+    <ul id="changeDetailAttrList" class="change-attr-list"></ul>
+  </div>
+</div>
+
+<div id="dashboardModal" class="dash-modal" hidden>
+  <div id="dashboardBackdrop" class="dash-modal-backdrop"></div>
+  <div class="dash-modal-panel">
+    <div class="dash-modal-header">
+      <div class="dash-modal-heading">
+        <h3 id="dashSiteName" class="dash-title">&nbsp;</h3>
+        <p id="dashSubtitle" class="muted small"></p>
+      </div>
+      <button id="dashModalClose" class="pane-modal-close" type="button" title="Close">&times;</button>
+    </div>
+
+    <div class="dash-body" id="dashBody">
+
+      <div class="dash-kpi-row" id="dashKpiRow"></div>
+
+      <!-- The only control the dashboard has: which stretch of the record to
+           look at, as one range written the way it reads. The resolution and
+           grouping the charts use are fixed; the series are always all three. -->
+      <div class="dash-range-row" id="dashRangeFilter" hidden>
+        <select id="dashRangeFrom" class="dash-range-select" aria-label="Start of the range"></select>
+        <span class="dash-range-arrow" aria-hidden="true">&rarr;</span>
+        <select id="dashRangeTo" class="dash-range-select" aria-label="End of the range"></select>
+        <button id="dashRangeReset" class="dash-reset-btn" type="button">Reset</button>
+      </div>
+
+      <div class="dash-card dash-card-main">
+        <div class="dash-card-header">
+          <h4>Change activity over time</h4>
+          <span class="muted small" id="dashActivityHint">Click any bar to open that comparison</span>
+        </div>
+        <div class="dash-chart-wrap" id="dashActivityChart"></div>
+      </div>
+
+      <div class="dash-grid-2">
+        <div class="dash-card">
+          <div class="dash-card-header">
+            <h4>Change composition</h4>
+            <span class="muted small" id="dashCompositionHint">Across everything analyzed</span>
+          </div>
+          <div class="dash-chart-wrap dash-chart-small" id="dashCompositionChart"></div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-header">
+            <h4>What tends to change</h4>
+            <span class="muted small" id="dashTagHint">By element type</span>
+          </div>
+          <div class="dash-chart-wrap dash-chart-small" id="dashTagChart"></div>
+        </div>
+      </div>
+
+      <div class="dash-card">
+        <div class="dash-card-header">
+          <h4>Archive coverage</h4>
+          <span class="muted small">Gaps mean the crawler didn't visit, not that nothing changed</span>
+        </div>
+        <div class="dash-chart-wrap" id="dashCadenceChart"></div>
+        <div id="dashGapBreakdown" class="dash-gap-breakdown"></div>
+      </div>
+
+      <div class="dash-card">
+        <div class="dash-card-header">
+          <h4>Largest differences between snapshots</h4>
+          <span class="muted small">Between two captures, not one event</span>
+        </div>
+        <div id="dashLeaderboard" class="dash-leaderboard"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="dashTooltip" class="dash-tooltip" hidden></div>
+
+<!-- The timelapse: the same record played back as a film. Two stacked
+     iframes so one frame can dissolve into the next instead of blinking. -->
+<div id="timelapseModal" class="tl-modal" hidden>
+  <div id="timelapseBackdrop" class="tl-modal-backdrop"></div>
+  <div class="tl-panel">
+    <div class="tl-header">
+      <div class="tl-heading">
+        <h3 id="tlSiteName" class="tl-title">&nbsp;</h3>
+        <p id="tlSubtitle" class="muted small"></p>
+      </div>
+      <div class="tl-header-actions">
+        <button id="tlDownloadBtn" class="tl-icon-btn tl-head-btn" type="button"
+                title="Download the film as a video" aria-label="Download the film as a video">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0 4-4m-4 4-4-4M5 17.5V19a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-1.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button id="tlModalClose" class="pane-modal-close" type="button" title="Close">&times;</button>
+      </div>
+    </div>
+
+    <div class="tl-body">
+      <div class="tl-stage">
+        <div class="tl-chrome">
+          <span class="tl-lights"><i></i><i></i><i></i></span>
+          <span class="tl-addr mono" id="tlAddress"></span>
+        </div>
+        <div class="tl-viewport" id="tlViewport">
+          <iframe id="tlFrameA" class="tl-frame" sandbox="allow-same-origin" title="Archived snapshot"></iframe>
+          <iframe id="tlFrameB" class="tl-frame" sandbox="allow-same-origin" title="Archived snapshot"></iframe>
+
+          <div class="tl-scroll" id="tlScroll" hidden>
+            <div class="tl-scroll-thumb" id="tlScrollThumb"></div>
+          </div>
+          <div class="tl-scroll-hint" id="tlScrollHint" hidden>Scroll to see the whole page</div>
+
+          <canvas class="tl-live" id="tlLive" hidden></canvas>
+
+          <button class="tl-datecard" id="tlDateCard" type="button"
+                  title="Compare this capture in the snapshot view">
+            <span class="tl-date-eyebrow">Captured</span>
+            <span class="tl-date" id="tlDate">&nbsp;</span>
+            <span class="tl-date-gap" id="tlDateGap"></span>
+          </button>
+
+          <div class="tl-delta" id="tlDelta"></div>
+
+          <div class="tl-loader" id="tlLoader">
+            <div class="tl-load-card">
+              <span class="tl-load-eyebrow">Filing the record</span>
+              <p class="tl-load-title" id="tlLoaderText">Retrieving capture 0 of 0</p>
+              <div class="tl-load-bar"><div class="tl-load-fill" id="tlLoadFill"></div></div>
+              <p class="tl-load-sub" id="tlLoadSub">&nbsp;</p>
+            </div>
+          </div>
+
+          <div class="tl-buffer" id="tlBuffer" hidden>
+            <span class="tl-buffer-dot"></span>
+            <span id="tlBufferText">fetching the next capture</span>
+          </div>
+
+          <div class="tl-export" id="tlExport" hidden>
+            <div class="tl-export-card">
+              <span class="tl-load-eyebrow">Download the film</span>
+              <p class="tl-export-title" id="tlExportTitle">&nbsp;</p>
+              <p class="tl-export-sub" id="tlExportSub" hidden></p>
+              <div class="tl-export-row">
+                <span class="tl-export-label">Seconds per capture</span>
+                <div class="tl-speeds" role="group" aria-label="Seconds per capture">
+                  <button type="button" class="tl-speed tl-export-pace" data-pace="0.25">0.25</button>
+                  <button type="button" class="tl-speed tl-export-pace is-active" data-pace="0.5">0.5</button>
+                  <button type="button" class="tl-speed tl-export-pace" data-pace="1">1</button>
+                </div>
+                <span class="tl-export-time mono" id="tlExportTime"></span>
+              </div>
+              <div class="tl-export-actions">
+                <button id="tlExportStart" class="tl-btn-primary" type="button">Make the video</button>
+                <button id="tlExportCancel" class="tl-btn-ghost" type="button">Not now</button>
+              </div>
+              <p class="tl-export-note" id="tlExportNote"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tl-transport">
+        <div class="tl-rail-wrap" id="tlRailWrap">
+          <div class="tl-rail" id="tlRail">
+            <div class="tl-rail-line"></div>
+            <div class="tl-rail-fill" id="tlRailFill"></div>
+            <div class="tl-rail-ticks" id="tlRailTicks"></div>
+            <div class="tl-rail-head" id="tlRailHead"></div>
+          </div>
+          <div class="tl-rail-ends">
+            <span id="tlFirstDate" class="muted mono"></span>
+            <span id="tlLastDate" class="muted mono"></span>
+          </div>
+        </div>
+
+        <div class="tl-prepare" id="tlPrepare" hidden>
+          <span class="tl-prepare-label" id="tlPrepareLabel"></span>
+          <div class="tl-prepare-bar"><div class="tl-prepare-fill" id="tlPrepareFill"></div></div>
+        </div>
+
+        <div class="tl-controls" id="tlControls">
+          <button id="tlRestart" class="tl-icon-btn" type="button" title="Back to the first capture">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 1 1 2.6 5.9M4 12V6M4 12h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button id="tlPlay" class="tl-play" type="button" title="Play" aria-label="Play the timelapse">
+            <svg class="tl-icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+            <svg class="tl-icon-pause" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5h3.2v14H8zM12.8 5H16v14h-3.2z"/></svg>
+          </button>
+          <span class="tl-counter mono" id="tlCounter">0 / 0</span>
+          <div class="tl-speeds" role="group" aria-label="Playback speed">
+            <button type="button" class="tl-speed" data-speed="0.5">0.5&times;</button>
+            <button type="button" class="tl-speed is-active" data-speed="1">1&times;</button>
+            <button type="button" class="tl-speed" data-speed="2">2&times;</button>
+            <button type="button" class="tl-speed" data-speed="4">4&times;</button>
+            <button type="button" class="tl-speed" data-speed="8">8&times;</button>
+            <button type="button" class="tl-speed" data-speed="16">16&times;</button>
+          </div>
+        </div>
+
+        <div class="tl-recording" id="tlRecording" hidden>
+          <span class="tl-rec-dot" id="tlRecDot"></span>
+          <span class="tl-rec-label" id="tlRecLabel"></span>
+          <span class="tl-rec-time mono" id="tlRecTime"></span>
+          <button id="tlRecAction" class="tl-btn-ghost" type="button">Stop &amp; save</button>
+          <button id="tlRecDone" class="tl-btn-ghost" type="button" hidden>Back to the film</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Nothing here has to size the hero before the first paint: the stylesheet
+     makes the flex column do that subtraction itself, so the page is born at
+     its settled height and never moves. theme.js only pins that height once
+     the layout exists, so the timeline below cannot change it. -->
+<!-- The scripts the application loads, in the same order and with the same
+     (non-deferred) loading, because they build on each other in a chain of
+     globals: the reveal engine first, so the compare view can explain and
+     perform hidden-element reveals from the start. -->  <script src="/reveal.js"></script>
+  <script src="/selection.js"></script>
+<script src="/paneNav.js"></script>
+<script src="/app.js"></script>
+<script src="/archiveStore.js"></script>
+<script src="/dashboard.js"></script>
+<script src="/timelapse.js"></script>
+<script src="/theme.js?v=26"></script>
+</body>
+</html>

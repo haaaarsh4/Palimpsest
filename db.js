@@ -63,9 +63,41 @@ async function initSchema() {
     )
   `);
 
+  // The measured change between each capture and the one before it: the
+  // numbers the rail, the dashboard and the film's caption are all drawn from.
+  //
+  // They are stored rather than recomputed because computing them is the
+  // expensive half of reading a record, one diff of two captured pages costs
+  // about 66ms, so a 741-capture history is roughly fifty seconds of parsing  
+  // and because the answer never changes. The documents are immutable and so
+  // is the difference between two of them, so this is a cache in the strict
+  // sense: reproducible from snapshot_html, permanent once written.
+  //
+  // One row per capture (the one on the right of the pair), keyed the same way
+  // snapshot_html is, so a capture and its numbers can be addressed together.
+  // `version` is the diff engine's shape: bumping it retires every row rather
+  // than mixing numbers measured by two different rules.
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS record_steps (
+      cache_key TEXT PRIMARY KEY,
+      url TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      counts TEXT NOT NULL,
+      tags TEXT NOT NULL,
+      totals INTEGER NOT NULL,
+      version INTEGER NOT NULL,
+      computed_at INTEGER NOT NULL
+    )
+  `);
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_record_steps_url ON record_steps (url)');
+  // Every record read filters captures by site: without this the database
+  // scans every site's captures for every request, and a record request
+  // costs the whole table rather than the one site asked for.
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_snapshot_html_url ON snapshot_html (url, timestamp)');
+
   // Cached claim reports: one row per traced address. The payload is the whole
   // dossier (threads, events, scores, charts), and the version is what makes an
-  // old row safe to ignore when the analysis rules change — the report is
+  // old row safe to ignore when the analysis rules change, the report is
   // rebuilt from the same cached captures at no Archive cost, so the only
   // thing a version bump costs is one pass over rows we already have.
   await db.execute(`

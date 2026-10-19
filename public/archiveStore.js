@@ -16,20 +16,30 @@
 //
 // ## What the walk costs
 //
-// One step is one request to /api/record-step for a pair of adjacent captures.
-// The Archive hands out roughly one document a second, and the server
-// serialises every request to it through lib/rateLimiter.js, so a 740-capture
-// record is about thirteen minutes the first time it is read - for everyone,
-// not per visitor, because each document is then cached in Turso forever under
-// `${url}::${timestamp}`. Every reading after that is served from the
-// database and costs no Archive request at all.
+// Reading a record is two different jobs with two very different prices, and
+// they are done separately because only one of them is slow.
 //
-// Thirteen minutes is a long time to stare at a progress bar, which is why the
-// work is shared rather than repeated: whichever view opens first starts the
-// walk, and any other view that opens while it is still running attaches to
-// that same walk instead of starting a second one. Visit the dashboard, wait
-// through it once, and the timelapse opens instantly afterwards - and the other
-// way round works too.
+// The pages come from this machine. The server holds every capture it has ever
+// read, and it hands the whole record back in ONE response - a 741-capture
+// history is one query and about three seconds, where asking for it a pair at a
+// time was seven hundred and forty round trips and about a hundred seconds.
+// A capture the server has never read has to come off the Archive, which hands
+// out roughly one document a second through lib/rateLimiter.js, and that is the
+// only genuinely slow part: about thirteen minutes for a 740-capture record the
+// first time anyone reads it, for everyone rather than per visitor, because
+// each document is kept in Turso forever under `${url}::${timestamp}`. Every
+// reading after that costs no Archive request at all.
+//
+// The numbers - what changed between each capture and the one before it - are
+// measured on the server, once per site, and written down. They cost about 66ms
+// a pair to measure, so nobody waits on them: the pages are released to the
+// view the moment they are all accounted for, and the rail fills in behind the
+// film as the measurements land.
+//
+// Whichever view opens first starts the reading, and any other view that opens
+// while it is still running attaches to that same reading instead of starting a
+// second one. Visit the dashboard, wait through it once, and the timelapse
+// opens instantly afterwards - and the other way round works too.
 //
 // ## Why the pages live in IndexedDB
 //
@@ -55,7 +65,7 @@ const AR_IDB_STORE = 'record';
 // This must be raised whenever the store's name or shape changes, and it was
 // not: the store was renamed while the version stayed at 1. A database already
 // at version 1 never fires onupgradeneeded again, so the store was never
-// created for anyone who had opened the app before the rename — every write and
+// created for anyone who had opened the app before the rename, every write and
 // read threw, every call silently took the in-memory fallback, and nothing
 // persisted across a reload. The failure was invisible because the fallback is
 // the whole point of the module: the app worked, it just quietly forgot
@@ -72,17 +82,51 @@ const AR_IDB_VERSION = 3;
 // is worse than no record, because it plays back as though it were complete.
 const AR_SCHEMA = 2;
 
-// How many steps are in flight at once. The server puts every Archive request
-// behind one 1.1s gate no matter how many arrive, so this is not about going
-// faster than the Archive allows - it is about keeping the network and the
-// server's diffing busy during the gaps between those gated fetches.
-const AR_CONCURRENCY = 4;
+// How many captures are asked for at once when the record has to come off the
+// Archive. The server puts every Archive request behind one 1.1s gate no matter
+// how many arrive, so this is not about going faster than the Archive allows -
+// it is about keeping the pipe full during the gaps between those gated
+// fetches, because a capture the Archive is sitting on must not hold up the six
+// behind it.
+const AR_HOLE_WIDE = 6;
 
-// How many times one step may be asked for before it is written off. Nearly
+// How many pages are asked for in one batch when the record is being filled in
+// behind a film that is already playing. Small enough that the response is a
+// few megabytes rather than thirty, and large enough that the round trips are
+// not the cost.
+const AR_DOC_CHUNK = 120;
+
+// How many times one capture may be asked for before it is written off. Nearly
 // every failure here is a timeout rather than a capture that will never exist,
 // so one retry is worth it. An unbounded retry is not: a capture the Archive
 // will never have would otherwise be re-requested on every visit.
 const AR_MAX_ATTEMPTS = 2;
+
+// Every request this file makes has a deadline, and that is the point of the
+// numbers below. There was a version of this that did not: one fetch with no
+// timeout, waiting on a server that had already stopped answering, left a
+// progress card reading "retrieving capture 1 of 741" with nothing running
+// behind it and no way out but closing the tab. A wait that cannot end is not a
+// slow record, it is a broken one, and the fix is to make every wait end.
+const AR_RECORD_TIMEOUT_MS = 240000;  // one response carrying the whole record
+const AR_CAPTURE_TIMEOUT_MS = 90000;  // one capture, possibly off the Archive
+const AR_POLL_TIMEOUT_MS = 20000;     // the numbers behind the rail, once a second
+const AR_POLL_MS = 1500;
+const AR_MANIFEST_TIMEOUT_MS = 8000;  // IndexedDB may never stall a reading
+
+// How long a reading waits for a compile to finish before resolving with the
+// numbers it has. The compile is about 66ms a pair, so this covers a record far
+// longer than the Archive's own 2000-capture ceiling. It is a ceiling and not a
+// wait: a compile that has already stopped is not polled once, and a compile
+// that finishes the record ends the poll the moment it does.
+const AR_COMPILE_WAIT_MS = 300000;
+
+// How many captures may fail in a row, with nothing ever succeeding, before the
+// reading decides it is not looking at a record but at a server that has stopped
+// answering. Only the first few can fail for a real reason - a capture the
+// Archive does not have is answered 'no', not left unanswered - so a dozen
+// 'nothing' responses with no success anywhere is a broken connection.
+const AR_BLIND_ATTEMPTS = 12;
 
 // Documents per IndexedDB transaction. One transaction per document across 740
 // documents would spend more time opening transactions than storing data.
@@ -230,9 +274,21 @@ function arMakeProgress(state, index) {
     done,
     total,
     index,
+    // What this reading is doing right now: pulling the record off this
+    // machine ('record'), reading captures off the Archive ('captures'), or
+    // waiting on the numbers behind the rail ('numbers'). A progress card can
+    // only be honest if it knows which one it is reporting on.
+    stage: state.stage || 'record',
     timestamp: index >= 0 ? state.snaps[index].timestamp : null,
     date: index >= 0 ? state.snaps[index].date : null,
     etaSeconds: eta,
+    // The numbers measured so far, index-aligned with the capture list. They
+    // arrive while a view is already playing, so they have to be readable from
+    // the progress event itself - the rail builds itself out of these, and the
+    // dashboard draws its charts from them long before the reading resolves.
+    counts: state.stage === 'numbers' ? state.counts : null,
+    totals: state.stage === 'numbers' ? state.totals : null,
+    tags: state.stage === 'numbers' ? state.tags : null,
   };
 }
 
@@ -242,40 +298,45 @@ function arProgress(state, index, run) {
   arEmit(run, arMakeProgress(state, index));
 }
 
-async function arStep(url, snaps, p, needOld) {
-  const from = snaps[p];
-  const to = snaps[p + 1];
-
-  for (let attempt = 0; attempt < AR_MAX_ATTEMPTS; attempt++) {
-    try {
-      const res = await fetch(
-        `/api/record-step?url=${encodeURIComponent(url)}` +
-        `&from=${encodeURIComponent(from.timestamp)}` +
-        `&to=${encodeURIComponent(to.timestamp)}` +
-        (needOld ? '&withOld=1' : '')
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not retrieve that pair of captures.');
-      if (typeof data.newHtml !== 'string' || !data.newHtml.length) throw new Error('Empty capture.');
-      return data;
-    } catch (_) {
-      if (attempt + 1 < AR_MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 500));
-    }
+// A request that is guaranteed to end. `fetch` will wait forever on a socket
+// whose far end has stopped answering, and every wait in this file is built on
+// this rather than on that hope.
+async function arFetchJson(path, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(path, { signal: controller.signal });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+    return data;
+  } finally {
+    clearTimeout(timer);
   }
-  return null;
 }
 
-// One capture on its own, with no diff attached. Used to fill a page that a
-// failed step should have delivered; nothing else needs it, because every
-// other page arrives as part of a step.
+// A promise with a ceiling. Used for IndexedDB, which does not take an abort
+// signal and can sit on a blocked transaction indefinitely - a version upgrade
+// another tab is holding open, a disk that has stopped answering. Nothing here
+// is required for the app to work, so a store that will not answer is a store
+// this reading does without.
+function arBound(promise, ms, fallback) {
+  return Promise.race([
+    promise.catch(() => fallback),
+    new Promise((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
+// One capture on its own: the page, either from the server's cache or straight
+// off the Archive. This is the only way a page is ever fetched now, because a
+// page and the numbers behind it are asked for on different schedules - the
+// pages the moment the record is opened, the numbers as they are compiled.
 async function arCapture(url, ts) {
   for (let attempt = 0; attempt < AR_MAX_ATTEMPTS; attempt++) {
     try {
-      const res = await fetch(
-        `/api/capture?url=${encodeURIComponent(url)}&ts=${encodeURIComponent(ts)}`
+      const data = await arFetchJson(
+        `/api/capture?url=${encodeURIComponent(url)}&ts=${encodeURIComponent(ts)}`,
+        AR_CAPTURE_TIMEOUT_MS
       );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not retrieve that capture.');
       if (typeof data.html !== 'string' || !data.html.length) throw new Error('Empty capture.');
       return data.html;
     } catch (_) {
@@ -283,6 +344,14 @@ async function arCapture(url, ts) {
     }
   }
   return null;
+}
+
+// Emit in batches rather than one transaction per page: 741 documents is more
+// transactions than it is data.
+async function arWriteBatched(entries) {
+  for (let i = 0; i < entries.length; i += AR_BATCH) {
+    await arWrite(entries.slice(i, i + AR_BATCH));
+  }
 }
 
 async function arWalk(url, snaps, run) {
@@ -297,19 +366,23 @@ async function arWalk(url, snaps, run) {
     docs: new Array(n).fill(false),
     done: 0,
     total: Math.max(0, n - 1),
+    stage: 'record',
     startedAt: Date.now(),
   };
   // Handed to anyone who attaches later, so a view that opens halfway through
-  // a reading starts reporting the reading's real position rather than zero.
+  // a reading starts reporting the reading's real position rather than zero -
+  // and announced immediately, before the first request goes out, so that a
+  // card is never showing a number no walk is behind.
   run.state = state;
+  arProgress(state, -1, run);
 
   // Pick up where a previous reading left off. An interrupted walk - closed
   // tab, dropped connection, one failed capture - costs only the part it did
-  // not finish, and a step that failed last time is tried again rather than
-  // being remembered as permanently missing.
-  const prev = await arRead(arManifestKey(url));
+  // not finish, and a page that could not be retrieved last time is tried again
+  // rather than being remembered as permanently missing.
+  const prev = await arBound(arRead(arManifestKey(url)), AR_MANIFEST_TIMEOUT_MS, undefined);
   if (prev && (prev.schema !== AR_SCHEMA || prev.signature !== sig)) {
-    await arClearFor(url);
+    await arBound(arClearFor(url), AR_MANIFEST_TIMEOUT_MS, undefined);
   } else if (prev) {
     for (let i = 0; i < n; i++) {
       if (prev.counts && prev.counts[i]) state.counts[i] = prev.counts[i];
@@ -320,113 +393,285 @@ async function arWalk(url, snaps, run) {
   }
   if (run.cancelled) return arResult(url, sig, state);
 
-  // A step produces the page on its right, and therefore also counts the
-  // changes leading into that page. Step 0 has nothing before it, so the
-  // counts for the opening capture are always null and the opening page has to
-  // be asked for as the older half of step 0.
-  const queue = [];
-  for (let p = 0; p < n - 1; p++) if (!state.counts[p + 1]) queue.push(p);
+  // Everything this record needs may already be on this machine, in which case
+  // there is nothing to ask anyone and the film opens at once. That is the
+  // whole point of storing it: the second visit is not a faster walk, it is no
+  // walk.
+  let answered = 0;
+  for (let i = 0; i < n; i++) if (state.docs[i]) answered++;
 
-  if (queue.length) {
-    let cursor = 0;
-    let pending = [];
-
-    const flush = async () => {
-      if (!pending.length) return;
-      const batch = pending;
-      pending = [];
-      await arWrite(batch);
-    };
-
-    async function worker() {
-      while (cursor < queue.length) {
-        const p = queue[cursor++];
-        if (run.cancelled) return;
-
-        // Only the very first step needs its older page as well: every other
-        // step's left-hand page is the previous step's right-hand page. Whether
-        // that previous step actually delivered it is not knowable until it
-        // finishes, which on a pipeline is often after this one is already in
-        // flight. Waiting for it would hold the whole reading to one request at
-        // a time to save half the bandwidth, which is a bad trade — the gaps
-        // between steps are where the transfer and the storing happen. If a
-        // step does fail, the page it owed is picked up afterwards instead.
-        const data = await arStep(url, snaps, p, p === 0);
-
-        if (data) {
-          const to = p + 1;
-          state.counts[to] = data.counts;
-          state.tags[to] = data.tagCounts || {};
-          state.totals[to] = data.counts.added + data.counts.removed + data.counts.changed;
-          state.docs[to] = true;
-          pending.push([arKey(url, snaps[to].timestamp), data.newHtml]);
-
-          if (p === 0 && typeof data.oldHtml === 'string' && data.oldHtml.length) {
-            state.docs[0] = true;
-            pending.push([arKey(url, snaps[0].timestamp), data.oldHtml]);
-          }
-        } else {
-          state.counts[p + 1] = null;
-          state.docs[p + 1] = false;
-        }
-
-        state.done++;
-        if (pending.length >= AR_BATCH) await flush();
-        arProgress(state, p + 1, run);
-      }
+  // ---- how much of this record is already here, and the numbers -------------
+  // Asked for before anything is waited on, and it is a few kilobytes: the
+  // numbers, plus how many captures this machine already holds for the address.
+  // That one number decides which of two very different films is about to
+  // happen, so it is worth a single small request to know.
+  let held = 0;
+  if (answered < n) {
+    try {
+      const brief = await arFetchJson(
+        `/api/record?url=${encodeURIComponent(url)}&countsOnly=1`,
+        AR_POLL_TIMEOUT_MS
+      );
+      held = Number(brief.captures) || 0;
+      if (brief.counts) arApplyCounts(state, brief.counts);
+    } catch (_) {
+      // Not fatal: without an answer the pages are simply read the slow way.
     }
+    if (run.cancelled) return arResult(url, sig, state);
 
-    await Promise.all(
-      Array.from({ length: Math.min(AR_CONCURRENCY, queue.length) }, worker)
-    );
-    await flush();
+    // Every capture of this record is already on this machine, so the film does
+    // not wait for the documents. A page is a disk read away and the loader
+    // already fetches each one before it is shown, so the film opens on the
+    // numbers - kilobytes - and the pages arrive behind it, in the order it
+    // will want them. That is the difference between a card that says
+    // "retrieving capture 1 of 741" and a film that is already playing.
+    if (held >= n) {
+      state.docs.fill(true);          // answerable: on file here, and fetchable per frame
+      arDocsReady(run, arResult(url, sig, state));
+      await arStreamDocs(url, snaps, state, run);
+      await arCollectCounts(url, snaps, state, run);
+      await arWriteManifest(url, sig, state);
+      return arResult(url, sig, state);
+    }
   }
 
-  // Any page still missing at this point is a page a failed step owed us, and
-  // the only way to know is to look. In the ordinary case there are none and
-  // this costs nothing; when the Archive drops something, it is one cheap
-  // request per hole rather than a page that silently never plays.
+  // ---- the pages -----------------------------------------------------------
+  // One request for every capture the server already holds. A record of 741
+  // captures is about three seconds this way and about a hundred the other way,
+  // and it is the same data either way.
+  if (answered < n) {
+    try {
+      const data = await arFetchJson(`/api/record?url=${encodeURIComponent(url)}`, AR_RECORD_TIMEOUT_MS);
+      const held = new Map();
+      if (Array.isArray(data.rows)) {
+        for (const row of data.rows) held.set(String(row[0]), row[1]);
+      }
+      const writes = [];
+      for (let i = 0; i < n; i++) {
+        if (state.docs[i]) continue;
+        const html = held.get(snaps[i].timestamp);
+        if (typeof html === 'string' && html.length) {
+          state.docs[i] = true;
+          answered++;
+          writes.push([arKey(url, snaps[i].timestamp), html]);
+        }
+      }
+      if (writes.length) await arWriteBatched(writes);
+
+      // The numbers measured so far ride along with the pages, so a record that
+      // has been read before arrives complete in one response.
+      if (data.counts) arApplyCounts(state, data.counts);
+    } catch (_) {
+      // The whole-record request is the fast path, not the only path: whatever
+      // it could not deliver is asked for capture by capture below.
+    }
+    if (run.cancelled) return arResult(url, sig, state);
+  }
+
+  // Anything still unanswered has to come off the Archive, one capture at a
+  // time. This is the only genuinely slow part of reading a record - the
+  // Archive hands out about a document a second - and it is why a record that
+  // has never been read says how far along it is.
   const holes = [];
   for (let i = 0; i < n; i++) if (!state.docs[i]) holes.push(i);
   if (holes.length) {
-    await Promise.all(holes.map(async (i) => {
-      const html = await arCapture(url, snaps[i].timestamp);
-      if (typeof html === 'string' && html.length) {
-        state.docs[i] = true;
-        await arWrite([[arKey(url, snaps[i].timestamp), html]]);
+    state.stage = 'captures';
+    state.total = holes.length;
+    state.done = 0;
+    arProgress(state, -1, run);
+
+    let cursor = 0;
+    let asked = 0;
+    let retrieved = 0;
+    let blind = false;
+
+    const worker = async () => {
+      for (;;) {
+        const i = cursor++;
+        if (i >= holes.length || run.cancelled || blind) return;
+        asked++;
+        const html = await arCapture(url, state.snaps[holes[i]].timestamp);
+        if (typeof html === 'string' && html.length) {
+          retrieved++;
+          state.docs[holes[i]] = true;
+          await arWrite([[arKey(url, state.snaps[holes[i]].timestamp), html]]);
+        } else if (!retrieved && asked >= AR_BLIND_ATTEMPTS) {
+          // Twelve captures asked for and not one page back is not a record
+          // with holes in it, it is a server that is not answering. Asking the
+          // remaining seven hundred the same question would take hours and
+          // teach nobody anything, so the reading stops and says so.
+          blind = true;
+          return;
+        }
+        state.done++;
+        arProgress(state, holes[i], run);
       }
-    }));
+    };
+    await Promise.all(Array.from({ length: Math.min(AR_HOLE_WIDE, holes.length) }, worker));
+
+    if (blind && !run.cancelled) {
+      throw new Error('The server did not answer while the record was being read.');
+    }
   }
 
-  // Written last, and read first, so a half-finished walk is never mistaken
-  // for a whole one. `complete` is deliberately absent: the field is written
-  // exactly once, by the code that is about to finish.
-  await arWrite([[arManifestKey(url), {
+  // Every frame has been answered - it is on disk, or it is a capture the
+  // Archive does not have - so the film can open. The numbers behind its rail
+  // are still being measured, and it does not wait for them: they fill in while
+  // it plays, which is the same way the rail has always built itself.
+  arDocsReady(run, arResult(url, sig, state));
+
+  // ---- the numbers ---------------------------------------------------------
+  await arCollectCounts(url, snaps, state, run);
+  await arWriteManifest(url, sig, state);
+
+  return arResult(url, sig, state);
+}
+
+// Written last, and read first, so a half-finished walk is never mistaken for a
+// whole one.
+async function arWriteManifest(url, sig, state) {
+  await arBound(arWrite([[arManifestKey(url), {
     schema: AR_SCHEMA,
     signature: sig,
-    count: n,
+    count: state.snaps.length,
     counts: state.counts,
     tags: state.tags,
     totals: state.totals,
     docs: state.docs,
     savedAt: Date.now(),
-  }]]);
+  }]]), AR_MANIFEST_TIMEOUT_MS, undefined);
+}
 
-  return arResult(url, sig, state);
+// The pages, pulled in behind a film that is already playing. Each batch is a
+// slice of the record the server already holds, and each one is written to disk
+// as it lands, so the frames just ahead of the playhead reach the store before
+// the playhead does and the next opening of this record costs nothing at all.
+//
+// In order, deliberately: the film plays the record front to back, so filling it
+// front to back means the pages arrive in the order they are wanted without the
+// store having to guess. A batch that fails is not retried here - the frame
+// fetches its own page when it is needed, and this is the pass that makes that
+// rare.
+async function arStreamDocs(url, snaps, state, run) {
+  const n = snaps.length;
+  const wanted = new Set(snaps.map((s) => s.timestamp));
+
+  for (let from = 0; from < n; from += AR_DOC_CHUNK) {
+    if (run.cancelled) return;
+    let data;
+    try {
+      data = await arFetchJson(
+        `/api/record?url=${encodeURIComponent(url)}&from=${from}&limit=${AR_DOC_CHUNK}`,
+        AR_RECORD_TIMEOUT_MS
+      );
+    } catch (_) {
+      return;   // the film plays from the server frame by frame instead
+    }
+    if (!Array.isArray(data.rows) || !data.rows.length) return;
+
+    const writes = [];
+    for (const row of data.rows) {
+      const ts = String(row[0]);
+      if (!wanted.has(ts)) continue;
+      writes.push([arKey(url, ts), row[1]]);
+    }
+    if (writes.length) await arWriteBatched(writes);
+    if (run.cancelled) return;
+  }
+}
+
+// The counts a record response carried, keyed by capture timestamp. Only the
+// pairs that have actually been measured appear, so this is how a partly
+// compiled record still arrives mostly filled in.
+function arApplyCounts(state, byTs) {
+  const snaps = state.snaps;
+  let applied = 0;
+  for (let i = 1; i < snaps.length; i++) {
+    if (state.counts[i]) { applied++; continue; }
+    const step = byTs[snaps[i].timestamp];
+    if (!step || !step.counts) continue;
+    state.counts[i] = step.counts;
+    state.tags[i] = step.tagCounts || {};
+    state.totals[i] = typeof step.totals === 'number'
+      ? step.totals
+      : step.counts.added + step.counts.removed + step.counts.changed;
+    applied++;
+  }
+  return applied;
+}
+
+// Waiting on the numbers. They are measured on the server, once per site, and
+// written down; what is left here is asking how far along that is. A record
+// whose numbers are already compiled answers on the first look and this returns
+// immediately, and a record whose numbers cannot be compiled finishes with the
+// holes the rail already draws honestly rather than polling for five minutes
+// over work that is not happening.
+//
+// It gives up on a stopped compile straight away, on a ceiling of
+// AR_COMPILE_WAIT_MS, and on the reading being cancelled - and in every one of
+// those cases it resolves with what it has rather than failing, because a film
+// that plays without its captions is worth more than a card that waits.
+async function arCollectCounts(url, snaps, state, run) {
+  const n = snaps.length;
+  const missing = () => {
+    let count = 0;
+    for (let i = 1; i < n; i++) if (!state.counts[i]) count++;
+    return count;
+  };
+  if (missing() === 0) return;
+
+  const deadline = Date.now() + AR_COMPILE_WAIT_MS;
+  state.stage = 'numbers';
+
+  while (!run.cancelled && Date.now() < deadline) {
+    let data;
+    try {
+      data = await arFetchJson(`/api/record?url=${encodeURIComponent(url)}&countsOnly=1`, AR_POLL_TIMEOUT_MS);
+    } catch (_) {
+      // A poll that fails is not a record that failed. Try again until the
+      // ceiling; the pages are already on disk and the film is already playing.
+      await new Promise((r) => setTimeout(r, AR_POLL_MS));
+      continue;
+    }
+
+    arApplyCounts(state, data.counts || {});
+    state.done = n - 1 - missing();
+    state.total = n - 1;
+    arProgress(state, run.lastIndex, run);
+
+    if (missing() === 0) return;
+    if (data.compile && data.compile.running === false) return;   // finished, or gave up
+    await new Promise((r) => setTimeout(r, AR_POLL_MS));
+  }
 }
 
 function arResult(url, sig, state) {
-  const complete = state.counts.slice(1).every(Boolean);
   return {
     url,
     signature: sig,
     count: state.snaps.length,
-    complete,
+    // `complete` is about the numbers, which is what the dashboard draws. The
+    // pages are a separate question with a separate answer: `docsComplete` says
+    // every capture has been answered - it is on disk, or the Archive does not
+    // have it - which is what the film needs before it can play.
+    complete: state.counts.slice(1).every(Boolean),
+    docsComplete: state.docs.every(Boolean),
     counts: state.counts,
     tags: state.tags,
     totals: state.totals,
     docs: state.docs,
   };
+}
+
+// The pages are on disk, so anything that wants to play this record can start
+// now. Recorded on the run as well as fired, because the film may be opened
+// while the dashboard is already reading the same record: the second caller
+// gets the same answer instead of waiting for a walk it does not need.
+function arDocsReady(run, result) {
+  run.docsReady = true;
+  run.docsResult = result;
+  if (typeof run.onDocs !== 'function') return;
+  try { run.onDocs(result); } catch (_) { /* a view's problem, not the record's */ }
 }
 
 /** The record just read in this tab, or null if this is not it. */
@@ -444,7 +689,7 @@ function arCached(url, snaps) {
  * that one hole in a twenty-seven-year history cannot cost you the other
  * seven hundred captures.
  */
-function arEnsure(url, snaps, onProgress) {
+function arEnsure(url, snaps, onProgress, onDocs) {
   const sig = arSignature(url, snaps);
 
   if (arRun && arRun.url === url && arRun.sig === sig) {
@@ -452,10 +697,23 @@ function arEnsure(url, snaps, onProgress) {
       arRun.listeners.add(onProgress);
       if (arRun.state) onProgress(arMakeProgress(arRun.state, arRun.lastIndex ?? -1));
     }
+    if (onDocs) {
+      // The pages may already be in hand from the reading this view is
+      // attaching to; if they are, this is a callback and not a wait.
+      if (arRun.docsReady) {
+        try { onDocs(arRun.docsResult); } catch (_) {}
+      } else {
+        arRun.onDocs = onDocs;
+      }
+    }
     return arRun.promise;
   }
 
-  const run = { url, sig, state: null, lastIndex: -1, listeners: new Set(onProgress ? [onProgress] : []) };
+  const run = {
+    url, sig, state: null, lastIndex: -1,
+    listeners: new Set(onProgress ? [onProgress] : []),
+    onDocs, docsReady: false, docsResult: null,
+  };
   arRun = run;
   run.promise = arWalk(url, snaps, run).then((result) => {
     arLast = { url, sig, result };
@@ -490,12 +748,15 @@ function arCancelIfOther(url, sig) {
 // The refetch is a database read on the far side, not a trip to the Archive:
 // the server has its own cache, so a stale record repairs itself at the cost of
 // one small request per capture, and only for captures actually played.
-const AR_CAPTURE_VERSION = 2;
+// Kept in step with lib/prepareCapture.js by test/prepareVersion.test.js rather
+// than by memory: the two disagreed once already, and the symptom was the film
+// rendering documents the compare view no longer produced.
+const AR_CAPTURE_VERSION = 9;
 const AR_CAPTURE_STAMP_RE = /<meta name="palimpsest-capture" content="(\d+)"/i;
 
 // A stamp is not proof on its own. The number was reused once while the
 // prepare pipeline changed underneath it, and every row written by the older
-// pipeline kept passing this check — so the film could render a document the
+// pipeline kept passing this check, so the film could render a document the
 // compare view no longer produces, silently, and the two readings of one
 // record disagreed.
 //
@@ -503,7 +764,7 @@ const AR_CAPTURE_STAMP_RE = /<meta name="palimpsest-capture" content="(\d+)"/i;
 // and noscript element, which means a current document has none; a document
 // that still has one came from a build that did not. It is parsed rather than
 // pattern-matched because commented-out script tags are common in archived
-// pages and a comment is not an element — the older pipeline's regex was what
+// pages and a comment is not an element, the older pipeline's regex was what
 // broke those comments in the first place.
 function arCaptureIsCurrent(html) {
   if (typeof html !== 'string' || !html) return false;
@@ -521,7 +782,7 @@ function arCaptureIsCurrent(html) {
 }
 
 /**
- * One capture, ready to render — from the store when it is there and current,
+ * One capture, ready to render, from the store when it is there and current,
  * and from the server when it is not.
  *
  * Never throws and never returns a rejected promise: a capture that cannot be
@@ -537,7 +798,7 @@ async function arDoc(url, ts) {
     await arWrite([[arKey(url, ts), fresh]]);
     return fresh;
   }
-  // The refetch failed. A stale page still beats no page — it is the wrong
+  // The refetch failed. A stale page still beats no page, it is the wrong
   // document rather than a blank frame - so it is used as-is.
   return typeof stored === 'string' && stored.length ? stored : undefined;
 }
